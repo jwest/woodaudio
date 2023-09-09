@@ -24,7 +24,7 @@ class Track:
     def __init__(self, track):
         self.track = track
         self.file_name = self._generate_file_name()
-        self.preload_lock_file_name = self.file_name.joinpath('_lock')
+        self.preload_lock_file_name = Path(str(self.file_name) + '_lock')
 
     def play(self, _ = ""):
         if (not self.is_preload()):
