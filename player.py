@@ -33,7 +33,7 @@ class Track:
             audioSegmentFile = AudioSegment.from_file(str(self.file_name), session_file_type)
             audioFragment = audioSegmentFile[:15000]
             play(audioFragment)
-        except(err):
+        except Exception as err:
             print(err)
 
     def preload(self, _ = ""):
@@ -96,8 +96,8 @@ def main():
                  config['tidal']['expiry_time']
             )
             print('session restored from config file')
-        except:
-            print('error')
+        except Exception as err:
+            print(err)
             tidal_login()
 
     session.audio_quality = session_audio_quality
