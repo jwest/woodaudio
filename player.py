@@ -24,13 +24,13 @@ class Track:
     def __init__(self, track):
         self.track = track
         self.file_name = self._generate_file_name()
-        self.preload_lock_file_name = self._generate_file_name() + '_lock'
+        self.preload_lock_file_name = self.file_name.joinpath('_lock')
 
     def play(self, _ = ""):
         if (not self.is_preload()):
             return
         try:
-            audioSegmentFile = AudioSegment.from_file(self.file_name, session_file_type)
+            audioSegmentFile = AudioSegment.from_file(str(self.file_name), session_file_type)
             audioFragment = audioSegmentFile[:15000]
             play(audioFragment)
         except(err):
@@ -40,30 +40,29 @@ class Track:
         if (self.is_preload() or self.is_preloaded()):
             return
 
-        file_name = self.file_name
-        print('Audio file download started: ' + file_name)
+        print('Audio file download started: ' + str(self.file_name))
         self._put_preload_lock()
         try:
             response = requests.get(self.track.get_url())
 
-            with open(file_name, "wb") as audioFile:
+            with open(str(self.file_name), "wb") as audioFile:
                 audioFile.write(response.content)
-                print('Audio file download completed: ' + file_name)
+                print('Audio file download completed: ' + str(self.file_name))
         except requests.exceptions.HTTPError as err:
             print(err)
             time.sleep(10)
             return self.preload()
     def is_preload(self):
-        return Path(self.preload_lock_file_name).exists()
+        return self.preload_lock_file_name.exists()
 
     def is_preloaded(self):
-        return Path(self.file_name).exists()
+        return self.file_name.exists()
+
+    def _put_preload_lock(self):
+        self.preload_lock_file_name.touch()
 
     def _generate_file_name(self):
         return Path(TMP_PATH).joinpath(hashlib.md5(self.track.get_url().encode()).hexdigest())
-
-    def _put_preload_lock(self):
-        Path(self.preload_lock_file_name).touch()
 
     def __str__ (self):
         return 'Track(track=' + self.track.get_url() + ')'
