@@ -4,6 +4,7 @@ import tempfile
 import hashlib
 from pathlib import Path
 from time import time,sleep
+import subprocess
 
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
@@ -37,7 +38,9 @@ def main():
                             audioFile.write(response.content)
                             print('Audio file download completed: ' + str(file_name))
 
-                            r.xadd('downloaded_playlist', {"url": data['url'], "full_name": data['full_name'], "ts": time(), "file_name": str(file_name)})
+                            convert_process = subprocess.run(['ffmpeg', '-i', str(file_name), str(file_name) + '.wav'])
+
+                            r.xadd('downloaded_playlist', {"url": data['url'], "full_name": data['full_name'], "ts": time(), "file_name": str(file_name), "file_name_wav": str(file_name) + '.wav'})
                             r.xdel('playlist', last_id)
                     except requests.exceptions.HTTPError as err:
                         print(err)

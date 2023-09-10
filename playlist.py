@@ -85,6 +85,7 @@ def main():
         try:
             return track.get_url()
         except requests.exceptions.HTTPError as err:
+            print(err)
             sleep(5)
             return get_url(track)
 
