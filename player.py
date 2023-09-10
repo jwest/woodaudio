@@ -4,9 +4,7 @@ from time import time
 
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 p = r.pubsub()
-p.subscribe('jou')
-
-session_file_type = 'flac'
+p.subscribe('player:next-track')
 
 def main():
     last_id = 0
@@ -26,8 +24,8 @@ def main():
                     r.xadd('archive', {"url": data['url'], "full_name": data['full_name'], "ts": time(), "file_name": data['file_name']})
                     r.xdel('downloaded_playlist', last_id)
 
-                    # player_process = subprocess.Popen(['ffplay', '-nodisp', '-autoexit', data['file_name']])
-                    player_process = subprocess.Popen(['aplay', data['file_name_wav']])
+                    player_process = subprocess.Popen(['ffplay', '-nodisp', '-autoexit', data['file_name']])
+                    # player_process = subprocess.Popen(['aplay', data['file_name_wav']])
                     while player_process.poll() is None:
                         message = p.get_message()
                         if (message is not None and message['type'] == 'message'):

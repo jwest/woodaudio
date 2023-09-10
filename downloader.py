@@ -8,8 +8,6 @@ import subprocess
 
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
-session_file_type = 'flac'
-
 TMP_PATH = tempfile.mkdtemp()
 
 def main():
@@ -38,7 +36,7 @@ def main():
                             audioFile.write(response.content)
                             print('Audio file download completed: ' + str(file_name))
 
-                            convert_process = subprocess.run(['ffmpeg', '-i', str(file_name), str(file_name) + '.wav'])
+                            # convert_process = subprocess.run(['ffmpeg', '-i', str(file_name), str(file_name) + '.wav'])
 
                             r.xadd('downloaded_playlist', {"url": data['url'], "full_name": data['full_name'], "ts": time(), "file_name": str(file_name), "file_name_wav": str(file_name) + '.wav'})
                             r.xdel('playlist', last_id)
