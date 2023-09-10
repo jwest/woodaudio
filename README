@@ -8,3 +8,8 @@ sudo apt-get install -y redis-server
 python -m pip install -r requirements.txt
 
 sudo systemctl start redis.service
+
+sudo cp ./woodaudio.service.template /lib/systemd/system/woodaudio.service (change [[USER]] as your linux user)
+
+logs:
+journalctl _SYSTEMD_UNIT=woodaudio.service

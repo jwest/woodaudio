@@ -3,7 +3,8 @@ import tidalapi
 import configparser
 import random
 import requests
-from time import time
+import hashlib
+from time import time,sleep
 
 session_audio_quality = tidalapi.Quality.hi_res_lossless
 
@@ -71,24 +72,36 @@ def main():
     for track in PLAYLIST:
         try:
             EXTEND_PLAYLIST.append(track)
-            for p in track.get_track_radio(5):
+            for p in track.get_track_radio(3):
                 EXTEND_PLAYLIST.append(p)
         except requests.exceptions.HTTPError as err:
             print(err)
-            time.sleep(2)
+            sleep(2)
 
     # PLAYLIST = list(map(lambda t: Track(t), EXTEND_PLAYLIST))
     print('EXTEND_PLAYLIST: ' + str(len(EXTEND_PLAYLIST)))
 
-    # PLAYLIST = list(map(lambda t: Track(t), PLAYLIST))
-    PLAYLIST = EXTEND_PLAYLIST
+    def get_url(track):
+        try:
+            return track.get_url()
+        except requests.exceptions.HTTPError as err:
+            sleep(5)
+            return get_url(track)
 
-    random.shuffle(PLAYLIST)
+    remove_duplicates = {}
+    for track in EXTEND_PLAYLIST:
+        remove_duplicates[hashlib.md5(get_url(track).encode()).hexdigest()] = track
+
+    # PLAYLIST = list(map(lambda t: Track(t), PLAYLIST))
+    PLAYLIST = remove_duplicates.values()
+
+    print('PLAYLIST after duplicates remove: ' + str(len(PLAYLIST)))
+    
+    random.shuffle(list(PLAYLIST))
 
     for track in PLAYLIST:
-        r.xadd('playlist', {"url": track.get_url(), "full_name": track.full_name, "ts": time()})
+        r.xadd('playlist', {"url": get_url(track), "full_name": track.full_name, "ts": time()})
     print("playlist length: " + str(r.xlen('playlist')))
 
 if __name__ == '__main__':
     main()
-
