@@ -6,7 +6,7 @@ import requests
 import hashlib
 from time import time,sleep
 
-session_audio_quality = tidalapi.Quality.hi_res_lossless
+session_audio_quality = tidalapi.Quality.high_lossless
 
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
