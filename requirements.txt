@@ -1,2 +1,2 @@
 tidalapi
-pydub
+redis

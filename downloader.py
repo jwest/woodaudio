@@ -2,7 +2,6 @@ import redis
 import requests
 import tempfile
 import hashlib
-import json
 from pathlib import Path
 from time import time,sleep
 
