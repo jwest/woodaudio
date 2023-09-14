@@ -15,3 +15,8 @@ sudo systemctl enable woodaudio.service
 
 logs:
 journalctl _SYSTEMD_UNIT=woodaudio.service
+
+rust:
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+cd woodaudio-player
+cargo build -r
