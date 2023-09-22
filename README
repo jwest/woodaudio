@@ -1,22 +1,63 @@
+## system dependencies
+
+```
 sudo apt-get update
 sudo apt-get install -y git
 sudo apt-get install -y python3-pip
 sudo apt-get install -y ffmpeg
 sudo apt-get install -y flac
 sudo apt-get install -y redis-server
-
+sudo apt-get install libasound2-dev
 python -m pip install -r requirements.txt
+```
 
-sudo systemctl start redis.service
+## compile player writen in rust on rpi
 
-sudo cp ./woodaudio.service.template /lib/systemd/system/woodaudio.service (change [[USER]] as your linux user)
-sudo systemctl daemon-reload
-sudo systemctl enable woodaudio.service
-
-logs:
-journalctl _SYSTEMD_UNIT=woodaudio.service
-
-rust:
+```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cd woodaudio-player
 cargo build -r
+```
+
+## for justboom digi hat
+
+Edit file: `sudo nano /boot/config.txt`
+
+```
+#dtparam=audio=on
+dtparam=audio=off
+dtoverlay=i2s-mmap
+dtoverlay=justboom-digi
+```
+
+and next:
+
+```
+sudo reboot now
+sudo raspi-config #change default audio output
+```
+
+## prepare and run serices
+
+```
+sudo systemctl enable redis.service
+sudo systemctl start redis.service
+
+sudo cp ./woodaudio-player.service.template /lib/systemd/system/woodaudio-player.service (change [[USER]] as your linux user)
+sudo cp ./woodaudio-playlist.service.template /lib/systemd/system/woodaudio-playlist.service (change [[USER]] as your linux user)
+sudo systemctl daemon-reload
+sudo systemctl enable woodaudio-player.service
+sudo systemctl enable woodaudio-playlist.service
+```
+
+## logs
+
+```
+journalctl _SYSTEMD_UNIT=woodaudio-player.service
+journalctl _SYSTEMD_UNIT=woodaudio-playlist.service
+```
+
+### alsa tuning
+https://forums.pcsx2.net/Thread-solved-Stuttering-sound-ALSA-underrun-occurred
+period_size 2048
+buffer_size 8192

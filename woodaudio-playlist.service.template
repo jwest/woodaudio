@@ -1,0 +1,14 @@
+[Unit]
+Description=Woodaudio playlist service
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python -u /home/jwest/woodaudio/playlist.py
+WorkingDirectory=/home/jwest/woodaudio/
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=jwest
+
+[Install]
+WantedBy=multi-user.target

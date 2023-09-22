@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import redis
 import tidalapi
 import configparser
@@ -12,6 +13,7 @@ CONFIG_FILE_NAME = 'config.ini'
 TMP_PATH = tempfile.mkdtemp()
 SLEEP_MS = 5000
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
+r.flushall()
 
 def wait_for_internet_connection():
     while True:
