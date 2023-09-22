@@ -68,11 +68,11 @@ def setup_session():
         print(err)
         sleep(3)
         setup_session()
-    
+
 def waiting():
     total_keys = r.dbsize()
     print('All keys: ' + str(total_keys))
-    while total_keys >= 10:
+    while r.dbsize() >= 10:
         sleep(5)
 
 def download_track(track):

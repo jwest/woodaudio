@@ -3,7 +3,7 @@ Description=Woodaudio manager service
 After=network-online.target
 
 [Service]
-ExecStart=/usr/bin/python /home/[[USER]]/woodaudio/manager.py
+ExecStart=/usr/bin/python -u /home/[[USER]]/woodaudio/manager.py
 WorkingDirectory=/home/[[USER]]/woodaudio/
 StandardOutput=inherit
 StandardError=inherit
