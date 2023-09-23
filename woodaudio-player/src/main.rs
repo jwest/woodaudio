@@ -17,10 +17,20 @@ extern crate redis;
 
 const APP_INFO: AppInfo = AppInfo{name: "woodaudio", author: "jwest" };
 
-fn connect_redis() -> Connection {
+fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
+    match function() {
+        Ok(output) => output,
+        Err(err) => {
+            println!("Load audio output fail, retry... ({:?})", err.to_string());
+            thread::sleep(Duration::from_secs(1));
+            retry(function)
+        },
+    }
+}
+
+fn connect_redis() -> Result<Connection, redis::RedisError> {
     let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-    let connection = client.get_connection().expect("Connection fail to redis");
-    connection
+    client.get_connection()
 }
 
 #[derive(Debug, Clone)]
@@ -77,8 +87,8 @@ fn add_liked_track(connection: &mut Connection) -> Result<(), Box<dyn Error>> {
 }
 
 fn main() -> ! {
-    let mut connection = connect_redis();
-    let mut connection_ps = connect_redis();
+    let mut connection = retry(connect_redis);
+    let mut connection_ps = retry(connect_redis);
 
     let mut pubsub = connection_ps.as_pubsub();
     pubsub.set_read_timeout(Some(Duration::from_secs(1))).expect("Error with duration");
@@ -87,7 +97,7 @@ fn main() -> ! {
     let mut song_played = 1;
 
     loop {
-        if song_played % 5 == 0 {
+        if song_played % 5 == 1 {
             println!("add bonus 'liked' track to playlist after 5 played tracks");
             let _ = add_liked_track(&mut connection);
         }
@@ -97,7 +107,7 @@ fn main() -> ! {
 
         match current_track {
             Some(track) => {
-                let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+                let (_stream, stream_handle) = retry(OutputStream::try_default);
                 let audio_file = match File::open(&track.file_name) {
                     Ok(it) => it,
                     Err(err) => {
@@ -106,8 +116,8 @@ fn main() -> ! {
                         continue;
                     },
                 };
-                let file = BufReader::new(audio_file);
-                let source_result = Decoder::new(file);
+                let file = BufReader::with_capacity(16384, audio_file);
+                let source_result = Decoder::new_flac(file);
     
                 let source = match source_result {
                     Ok(file) => file,
@@ -157,3 +167,4 @@ fn main() -> ! {
         }
     }
 }
+

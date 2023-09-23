@@ -1,9 +1,9 @@
 [Unit]
-Description=Woodaudio playlist service
+Description=Woodaudio control service
 After=network-online.target
 
 [Service]
-ExecStart=/usr/bin/python -u /home/jwest/woodaudio/playlist.py
+ExecStart=/usr/bin/python -u /home/jwest/woodaudio/control.py
 WorkingDirectory=/home/jwest/woodaudio/
 StandardOutput=inherit
 StandardError=inherit
