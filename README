@@ -61,3 +61,12 @@ journalctl _SYSTEMD_UNIT=woodaudio-playlist.service
 https://forums.pcsx2.net/Thread-solved-Stuttering-sound-ALSA-underrun-occurred
 period_size 2048
 buffer_size 8192
+
+## turno off bluetooth & shutdown button setup
+
+Edit file: `sudo nano /boot/config.txt`
+
+```
+dtoverlay=gpio-shutdown,gpio_pin=4
+dtoverlay=disable-bt
+```
