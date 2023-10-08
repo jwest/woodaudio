@@ -1,9 +1,12 @@
+requirements:
+```
 sudo apt-get update
 sudo apt-get install -y git
 sudo apt-get install -y python3-pip
 sudo apt-get install -y ffmpeg
 sudo apt-get install -y flac
 sudo apt-get install -y redis-server
+sudo apt-get install -y librust-alsa-sys-dev
 
 python -m pip install -r requirements.txt
 
@@ -12,11 +15,27 @@ sudo systemctl start redis.service
 sudo cp ./woodaudio.service.template /lib/systemd/system/woodaudio.service (change [[USER]] as your linux user)
 sudo systemctl daemon-reload
 sudo systemctl enable woodaudio.service
-
-logs:
-journalctl _SYSTEMD_UNIT=woodaudio.service
+```
 
 rust:
+```
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cd woodaudio-player
 cargo build -r
+```
+
+help:
+check music file type 
+```
+ffprobe [[file name]]
+```
+
+check logs
+```
+journalctl _SYSTEMD_UNIT=woodaudio.service -h
+```
+
+renice priority
+```
+sudo renice -n -12 [[player process number]]
+```
