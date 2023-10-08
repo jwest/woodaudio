@@ -3,8 +3,12 @@ name = "woodaudio-player"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 redis = "0.23.3"
 rodio = "0.17.1"
+app_dirs2 = "2.5"
+rand = "0.8.5"
+
+
+
+

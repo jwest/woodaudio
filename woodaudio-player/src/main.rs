@@ -1,115 +1,169 @@
-use redis::{Commands, Connection};
-use redis::streams::{StreamReadOptions, StreamReadReply};
-
+use std::error::Error;
+use std::fs;
+use std::thread;
+use std::fmt;
 use std::fs::File;
 use std::io::BufReader;
 use std::time::Duration;
+use rand::seq::IteratorRandom;
+
+use app_dirs2::AppDataType;
+use app_dirs2::AppInfo;
+use app_dirs2::get_app_root;
+use redis::{Commands, Connection};
 use rodio::{Decoder, OutputStream, Sink};
 
 extern crate redis;
 
-fn connect_redis() -> Connection {
+const APP_INFO: AppInfo = AppInfo{name: "woodaudio", author: "jwest" };
+
+fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
+    match function() {
+        Ok(output) => output,
+        Err(err) => {
+            println!("Load audio output fail, retry... ({:?})", err.to_string());
+            thread::sleep(Duration::from_secs(1));
+            retry(function)
+        },
+    }
+}
+
+fn connect_redis() -> Result<Connection, redis::RedisError> {
     let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-    let connection = client.get_connection().expect("Connection fail to redis");
-    connection
+    client.get_connection()
 }
 
-struct Queue<'a> {
-    last_id: String,
-    connection: &'a mut Connection
+#[derive(Debug, Clone)]
+struct Track {
+    id: String,
+    file_name: String,
 }
 
-impl Queue<'_> {
-    fn new(connection: &mut Connection) -> Queue {
-        let a: String = String::from("0");
-        Queue{
-            connection,
-            last_id: a,
-        }
-    }
-    fn pull(&mut self) -> Option<StreamReadReply> {
-        let opts = StreamReadOptions::default()
-            .block(3000)
-            .count(1);
-        let results: Option<StreamReadReply> = self.connection.xread_options(&["downloaded_playlist"], &[self.last_id.as_str()], &opts).unwrap();
-        results
-    }
-    fn ack(&mut self) {
-        let _ = self.connection.xdel::<&str, &str, String>("downloaded_playlist", &[self.last_id.as_str()]);
+impl fmt::Display for Track {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("Track")
+            .field("id", &self.id)
+            .field("file_name", &self.file_name)
+            .finish()
     }
 }
 
-fn main() {
-    let mut connection = connect_redis();
-    let mut connection_ps = connect_redis();
+fn read_next_track(connection: &mut Connection) -> Option<Track> {
+    return match redis::cmd("RANDOMKEY").query::<String>(connection) {
+        Ok(track_id) => match connection.get(track_id.clone()) {
+                Ok(track_file_name) => Some(Track { id: track_id, file_name: track_file_name }),
+                Err(_) => None
+        },
+        Err(_) => None,
+    };
+}
+
+fn ack_track(connection: &mut Connection, track_id: String) {
+    redis::cmd("DEL").arg(track_id).execute(connection);
+}
+
+fn like_track(track: &Track) -> Result<(), Box<dyn Error>> {
+    let data_dir = get_app_root(AppDataType::UserData, &APP_INFO)?;
+    fs::create_dir_all(data_dir.clone())?;
+    let new_file_path = data_dir.join(&track.id);
+    fs::copy(&track.file_name, &new_file_path)?;
+    println!("'Liked' file was saved in: {:?}", &new_file_path);
+    Ok(())
+}
+
+fn add_liked_track(connection: &mut Connection) -> Result<(), Box<dyn Error>> {
+    let data_dir = get_app_root(AppDataType::UserData, &APP_INFO)?;
+
+    let liked_files = fs::read_dir(data_dir)?;
+    
+    let random_track = liked_files
+        .choose(&mut rand::thread_rng())
+        .unwrap()?;
+
+    let _ = connection.set::<Option<&str>, Option<&str>, String>(random_track.file_name().to_str(), random_track.path().to_str());
+
+    println!("Random track added: {:?}", random_track.path().display());
+    Ok(())
+}
+
+fn main() -> ! {
+    let mut connection = retry(connect_redis);
+    let mut connection_ps = retry(connect_redis);
 
     let mut pubsub = connection_ps.as_pubsub();
     pubsub.set_read_timeout(Some(Duration::from_secs(1))).expect("Error with duration");
     pubsub.subscribe("player:control").expect("Error with subscribe");
 
-    let mut queue = Queue::new(&mut connection);
+    let mut song_played = 1;
 
     loop {
-        let results: Option<StreamReadReply> = queue.pull();
-        println!("{:?}", results);
+        if song_played % 5 == 1 {
+            println!("add bonus 'liked' track to playlist after 5 played tracks");
+            let _ = add_liked_track(&mut connection);
+        }
 
-        if let Some(reply) = results {
+        let current_track = read_next_track(&mut connection);
+        println!("Next readed track: {:?}", current_track);
 
-            for stream_key in reply.keys {
-                println!("->> xread block: {}", stream_key.key);
-                for stream_id in stream_key.ids {
-                    println!("  ->> StreamId: {:?}", stream_id);
-                    let id = stream_id.id.clone();
-                    queue.last_id = id;
-                    
-                    let url : String = stream_id.get("file_name").unwrap();
-                    println!("{:?}", url);
+        match current_track {
+            Some(track) => {
+                let (_stream, stream_handle) = retry(OutputStream::try_default);
+                let audio_file = match File::open(&track.file_name) {
+                    Ok(it) => it,
+                    Err(err) => {
+                        println!("Audio file '{:?}' not exists, try next...", err);
+                        ack_track(&mut connection, track.id);
+                        continue;
+                    },
+                };
+                let file = BufReader::with_capacity(16384, audio_file);
+                let source_result = Decoder::new_flac(file);
+    
+                let source = match source_result {
+                    Ok(file) => file,
+                    Err(_) => continue,
+                };
+    
+                let sink = Sink::try_new(&stream_handle).unwrap();
+                sink.append(source);
+                sink.play();
 
-                    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-                    let file = BufReader::new(File::open(url).unwrap());
-                    let source_result = Decoder::new(file);
-                    let source = match source_result {
-                        Ok(file) => file,
-                        Err(error) => {
-                            println!("Error with decode file {:?}", error);
-                            queue.ack();
-                            break;
-                        },
-                    };
-
-                    let sink = Sink::try_new(&stream_handle).unwrap();
-                    sink.append(source);
-                    sink.play();
-
-                    loop  {
-                        print!(".");
-                        if sink.empty() {
-                            println!("Track ended...");
-                            break;
-                        }
-                        let msg = pubsub.get_message();
-                        if msg.is_ok() {
-                            let unwrap_msg = msg.unwrap();
-                            let payload : String = unwrap_msg.get_payload().unwrap();
-                            println!("channel '{}': {}", unwrap_msg.get_channel_name(), payload);
-
-                            if payload == "PLAY" {
-                                sink.play();
-                            } else if payload == "PAUSE" {
-                                sink.pause();
-                            } else if payload == "NEXT" {
-                                sink.clear();
-                                break;
-                            }
-                        }
+                loop  {
+                    if sink.empty() {
+                        println!("Playing track ended.");
+                        break;
                     }
-
-                    // sink.sleep_until_end();
-
-                    queue.ack();
+                    let _ = pubsub.get_message()
+                        .map(|msg| msg.get_payload::<String>())
+                        .map(|payload| payload.unwrap())
+                        .map(|command| match command.as_str() {
+                            "PLAY" => sink.play(),
+                            "PAUSE" => sink.pause(),
+                            "NEXT" => sink.clear(),
+                            "PLAY_OR_NEXT" => if sink.is_paused() {
+                                sink.play();
+                            } else {
+                                sink.clear();
+                            },
+                            "LIKE" => {
+                                match like_track(&track) {
+                                    Err(err) => println!("Error on 'like' command {:?}", err),
+                                    _ => ()
+                                };
+                            }
+                            _ => ()
+                        });
                 }
+    
+                song_played += 1;
+                ack_track(&mut connection, track.id);
+            },
+            None => {
+                match add_liked_track(&mut connection) {
+                    Ok(_) => (),
+                    Err(_) => thread::sleep(Duration::from_secs(2)),
+                };
             }
-            println!();
         }
     }
 }

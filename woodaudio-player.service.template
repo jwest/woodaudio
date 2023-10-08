@@ -1,0 +1,15 @@
+[Unit]
+Description=Woodaudio player service
+After=network-online.target
+
+[Service]
+ExecStart=/home/jwest/woodaudio/woodaudio-player/target/release/woodaudio-player
+WorkingDirectory=/home/jwest/woodaudio/
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=jwest
+Nice=-15
+
+[Install]
+WantedBy=multi-user.target
