@@ -15,9 +15,9 @@ pub struct Track {
 #[derive(Debug)]
 #[derive(Clone)]
 pub enum PlayerBusAction {
-    PAUSE_PLAY,
-    NEXT_SONG,
-    NONE,
+    PausePlay,
+    NextSong,
+    None,
 }
 
 #[derive(Debug)]
@@ -50,7 +50,7 @@ impl PlayerBus {
                 info!("[PlayerBus] Action readed: {:?}", action);
                 action.clone()
             },
-            None => PlayerBusAction::NONE,
+            None => PlayerBusAction::None,
         }
     }
 }
@@ -76,14 +76,6 @@ impl Playlist {
         debug!("[Playlist] Track added: {:?}", track);
         let _ = self.sender.send(track);
     }
-
-    // pub fn push_priority(&self, tracks: Vec<Track>) {
-    //     debug!("[Playlist] Priority track added: {:?}", tracks);
-    //     self.receiver.iter();
-
-    //     tracks.iter()
-    //         .for_each(|t| { let _ = self.sender.send(t.clone()); });
-    // }
 
     pub fn pop(&self) -> Option<Track> {
         match self.receiver.recv() {
@@ -111,7 +103,6 @@ pub struct EventBus {
 impl EventBus {
     pub fn new(playlist: Playlist) -> EventBus {
         let (track_discovered_sender, track_discovered_receiver): (Sender<Track>, Receiver<Track>) = unbounded();
-        let (track_downloaded_sender, track_downloaded_receiver): (Sender<Track>, Receiver<Track>) = unbounded();
 
         EventBus{
             track_discovered_sender,

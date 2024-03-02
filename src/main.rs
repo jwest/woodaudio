@@ -13,13 +13,15 @@ use std::thread;
 
 use rand::thread_rng;
 use rand::seq::SliceRandom;
-use log::error;
+use log::{error, info};
 
 mod eventbus;
 use eventbus::{EventBus, PlayerBus, Playlist, Track};
 
 mod session;
 use session::Session;
+
+use tiny_http::{Server, Response};
 
 fn shuffle_vec(items: Vec<Value>) -> Vec<Value> {
     let mut rng_items = thread_rng();
@@ -146,17 +148,17 @@ fn player(playlist: Playlist, player_bus: PlayerBus) {
 
     loop {
         match player_bus.read() {
-            eventbus::PlayerBusAction::PAUSE_PLAY => {
+            eventbus::PlayerBusAction::PausePlay => {
                 if sink.is_paused() {
                     sink.play();
                 } else {
                     sink.pause();
                 }
             },
-            eventbus::PlayerBusAction::NEXT_SONG => {
+            eventbus::PlayerBusAction::NextSong => {
                 sink.clear();
             },
-            eventbus::PlayerBusAction::NONE => {},
+            eventbus::PlayerBusAction::None => {},
         };
         match sink.empty() {
             true => {
@@ -205,6 +207,32 @@ fn downloader_module(session: Session, bus: EventBus) {
     });
 }
 
+fn player_bus_server_module(player_bus: PlayerBus) {
+    thread::spawn(move || {
+        let server = Server::http("0.0.0.0:8001").unwrap();
+
+        for mut request in server.incoming_requests() {
+            if request.method().eq(&tiny_http::Method::Post) {
+                info!("[Server control] {}", request.url());
+
+                match request.url() {
+                    "/action/next" => player_bus.call(eventbus::PlayerBusAction::NextSong),
+                    "/action/play_pause" => player_bus.call(eventbus::PlayerBusAction::PausePlay),
+                    "/action/play_by_url" => {
+                        let mut content = String::new();
+                        request.as_reader().read_to_string(&mut content).unwrap();
+                        info!("[Server control] detail action play by url {}", content)
+                    },
+                    _ => {}
+                }
+            }
+
+            let response = Response::from_string("ok");
+            let _ = request.respond(response);
+        }
+    });
+}
+
 fn player_module(_: Session, playlist: Playlist, player_bus: PlayerBus) {
     let player_thread = thread::spawn(|| {
         let _ = player(playlist, player_bus);
@@ -228,6 +256,8 @@ fn main() {
     discovery_module_categories_for_you(session.clone(), bus.clone());
 
     downloader_module(session.clone(), bus.clone());
+
+    player_bus_server_module(player_bus.clone());
 
     player_module(session.clone(), playlist.clone(), player_bus.clone());
 }
