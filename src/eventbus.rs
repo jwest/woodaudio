@@ -14,6 +14,49 @@ pub struct Track {
 
 #[derive(Debug)]
 #[derive(Clone)]
+pub enum PlayerBusAction {
+    PAUSE_PLAY,
+    NEXT_SONG,
+    NONE,
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct PlayerBus {
+    sender: Sender<PlayerBusAction>, 
+    receiver: Receiver<PlayerBusAction>,
+}
+
+impl PlayerBus {
+    pub fn new() -> PlayerBus {
+        let (sender, receiver): (Sender<PlayerBusAction>, Receiver<PlayerBusAction>) = unbounded();
+
+        PlayerBus{
+            sender,
+            receiver,
+        }
+    }
+
+    pub fn call(&self, action: PlayerBusAction) {
+        debug!("[PlayerBus] Action called: {:?}", action);
+        let _ = self.sender.send(action);
+    }
+
+    pub fn read(&self) -> PlayerBusAction {
+        let actions: Vec<_> = self.receiver.try_iter().collect();
+
+        match actions.last() {
+            Some(action) => {
+                info!("[PlayerBus] Action readed: {:?}", action);
+                action.clone()
+            },
+            None => PlayerBusAction::NONE,
+        }
+    }
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct Playlist {
     sender: Sender<Track>, 
     receiver: Receiver<Track>,

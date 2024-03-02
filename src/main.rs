@@ -16,7 +16,7 @@ use rand::seq::SliceRandom;
 use log::error;
 
 mod eventbus;
-use eventbus::{Playlist, Track, EventBus};
+use eventbus::{EventBus, PlayerBus, Playlist, Track};
 
 mod session;
 use session::Session;
@@ -138,14 +138,26 @@ fn source(track: Track) -> Option<Decoder<BufReader<File>>> {
     }
 }
 
-fn player(playlist: Playlist) {
+fn player(playlist: Playlist, player_bus: PlayerBus) {
     let (_stream, stream_handle) = retry(OutputStream::try_default);
     let sink = Sink::try_new(&stream_handle).unwrap();
     
-    sink.set_speed(10.0);
     sink.play();
 
     loop {
+        match player_bus.read() {
+            eventbus::PlayerBusAction::PAUSE_PLAY => {
+                if sink.is_paused() {
+                    sink.play();
+                } else {
+                    sink.pause();
+                }
+            },
+            eventbus::PlayerBusAction::NEXT_SONG => {
+                sink.clear();
+            },
+            eventbus::PlayerBusAction::NONE => {},
+        };
         match sink.empty() {
             true => {
                 match playlist.pop() {
@@ -153,12 +165,13 @@ fn player(playlist: Playlist) {
                         let source = source(track);
                         if source.is_some() {
                             sink.append(source.unwrap());
+                            sink.play();
                         }
                     }
-                    None => thread::sleep(Duration::from_secs(1)),
+                    None => thread::sleep(Duration::from_millis(200)),
                 }
             },
-            false => thread::sleep(Duration::from_secs(1)),
+            false => thread::sleep(Duration::from_millis(200)),
         }
     }
 }
@@ -192,9 +205,9 @@ fn downloader_module(session: Session, bus: EventBus) {
     });
 }
 
-fn player_module(_: Session, playlist: Playlist) {
+fn player_module(_: Session, playlist: Playlist, player_bus: PlayerBus) {
     let player_thread = thread::spawn(|| {
-        let _ = player(playlist);
+        let _ = player(playlist, player_bus);
     });
 
     player_thread.join().expect("oops! the [player] thread panicked");
@@ -207,6 +220,7 @@ fn main() {
         .init();
 
     let playlist = Playlist::new();
+    let player_bus = PlayerBus::new();
     let bus = EventBus::new(playlist.clone());
     let session = Session::init_from_config_file().unwrap();
     
@@ -214,6 +228,6 @@ fn main() {
     discovery_module_categories_for_you(session.clone(), bus.clone());
 
     downloader_module(session.clone(), bus.clone());
-    
-    player_module(session.clone(), playlist.clone());
+
+    player_module(session.clone(), playlist.clone(), player_bus.clone());
 }
