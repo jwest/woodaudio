@@ -207,7 +207,7 @@ fn downloader_module(session: Session, bus: EventBus) {
     });
 }
 
-fn player_bus_server_module(player_bus: PlayerBus) {
+fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: PlayerBus) {
     thread::spawn(move || {
         let server = Server::http("0.0.0.0:8001").unwrap();
 
@@ -221,14 +221,88 @@ fn player_bus_server_module(player_bus: PlayerBus) {
                     "/action/play_by_url" => {
                         let mut content = String::new();
                         request.as_reader().read_to_string(&mut content).unwrap();
-                        info!("[Server control] detail action play by url {}", content)
+                        info!("[Server control] detail action play by url {}", content);
+
+                        if content.starts_with("https://tidal.com/track/") {
+                            let track_id = content.split("/").last();
+
+                            if track_id.is_some() {
+                                let track = Track { 
+                                    id: track_id.unwrap().to_string(),
+                                    full_name: format!("{}", track_id.unwrap().to_string()),
+                                    file_path: None,
+                                 };
+                                let download_file = download_file(&track, &session).unwrap().unwrap();
+                                info!("[Server control] force {:?}", download_file);
+                                
+                                playlist.push_force([download_file].to_vec());
+                                player_bus.call(eventbus::PlayerBusAction::NextSong);
+                            }
+                        }
+
+                        if content.starts_with("https://tidal.com/album/") {
+                            let album_id = content.split("/").last();
+                            let album = session.get_album(album_id.unwrap()).unwrap();
+                            let mut tracks: Vec<Track> = vec![];
+
+                            info!("[Server control] force album {:?}", album);
+                            if let serde_json::Value::Array(items) = &album["items"] {
+                                info!("[Server control] force ITEMS");
+                                for item in items {
+                                    info!("[Server control] force ITEM");
+                                    if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
+                                        info!("[Server control] force adSupportedStreamReady");
+                                        let track = Track { 
+                                            id: item["id"].as_i64().unwrap().to_string(),
+                                            full_name: format!("{} - {}", item["artist"]["name"], item["title"]), 
+                                            file_path: None,
+                                        };
+                                        let download_file = download_file(&track, &session).unwrap().unwrap();
+                                        tracks.push(download_file);
+                                        info!("[Server control] force {:?}", track);
+                                    }
+                                }
+                            }
+
+                            playlist.push_force(tracks);
+                            player_bus.call(eventbus::PlayerBusAction::NextSong);
+                        }
+
+                        if content.starts_with("https://tidal.com/artist/") {
+                            let artist_id = content.split("/").last();
+                            let artist = session.get_artist(artist_id.unwrap()).unwrap();
+                            let mut tracks: Vec<Track> = vec![];
+
+                            info!("[Server control] force artist {:?}", artist);
+                            if let serde_json::Value::Array(items) = &artist["items"] {
+                                info!("[Server control] force ITEMS");
+                                for item in items {
+                                    info!("[Server control] force ITEM");
+                                    if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
+                                        info!("[Server control] force adSupportedStreamReady");
+                                        let track = Track { 
+                                            id: item["id"].as_i64().unwrap().to_string(),
+                                            full_name: format!("{} - {}", item["artist"]["name"], item["title"]), 
+                                            file_path: None,
+                                        };
+                                        let download_file = download_file(&track, &session).unwrap().unwrap();
+                                        tracks.push(download_file);
+                                        info!("[Server control] force {:?}", track);
+                                    }
+                                }
+                            }
+
+                            playlist.push_force(tracks);
+                            player_bus.call(eventbus::PlayerBusAction::NextSong);
+                        }
                     },
                     _ => {}
                 }
-            }
 
-            let response = Response::from_string("ok");
-            let _ = request.respond(response);
+                let _ = request.respond(Response::empty(200));
+            } else {
+                let _ = request.respond(Response::empty(404));
+            }
         }
     });
 }
@@ -257,7 +331,7 @@ fn main() {
 
     downloader_module(session.clone(), bus.clone());
 
-    player_bus_server_module(player_bus.clone());
+    player_bus_server_module(session.clone(), playlist.clone(), player_bus.clone());
 
     player_module(session.clone(), playlist.clone(), player_bus.clone());
 }

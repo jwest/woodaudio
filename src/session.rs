@@ -101,7 +101,19 @@ impl Session {
         Ok(result)
     }
     pub fn get_favorites(&self) -> Result<Value, Box<dyn Error>> {
-        let response = self.request(format!("{}/users/{:?}/favorites/tracks?countryCode={}&limit=100&offset=0", self.api_path, self.user_id, self.country_code))?;
+        let response = self.request(format!("{}/users/{}/favorites/tracks?countryCode={}&limit=100&offset=0", self.api_path, self.user_id, self.country_code))?;
+        let body = response.text()?;
+        let result: Value = serde_json::from_str(&body)?;
+        Ok(result)
+    }
+    pub fn get_album(&self, album_id: &str) -> Result<Value, Box<dyn Error>> {
+        let response = self.request(format!("{}/albums/{}/tracks?countryCode={}&deviceType=BROWSER", self.api_path, album_id, self.country_code))?;
+        let body = response.text()?;
+        let result: Value = serde_json::from_str(&body)?;
+        Ok(result)
+    }
+    pub fn get_artist(&self, artist_id: &str) -> Result<Value, Box<dyn Error>> {
+        let response = self.request(format!("{}/artists/{}/toptracks?countryCode={}&deviceType=BROWSER", self.api_path, artist_id, self.country_code))?;
         let body = response.text()?;
         let result: Value = serde_json::from_str(&body)?;
         Ok(result)
