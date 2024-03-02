@@ -16,8 +16,7 @@ use rand::seq::SliceRandom;
 use log::error;
 
 mod eventbus;
-use eventbus::Track;
-use eventbus::EventBus;
+use eventbus::{Playlist, Track, EventBus};
 
 mod session;
 use session::Session;
@@ -117,34 +116,51 @@ fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
     }
 }
 
-fn player(bus: EventBus) {
-    bus.on_track_downloaded(|track| {
-        let (_stream, stream_handle) = retry(OutputStream::try_default);
-        let afp = track.file_path.as_ref().unwrap();
-        let audio_file_path = Path::new(afp.as_str());
-        let audio_file = match File::open(audio_file_path) {
-            Ok(it) => it,
-            Err(err) => {
-                error!("[Player] Audio file '{:?}' not exists, try next...", err);
-                return;
-            },
-        };
-        let file = BufReader::new(audio_file);
-        let source_result = Decoder::new_flac(file);
+fn source(track: Track) -> Option<Decoder<BufReader<File>>> {
+    let afp = track.file_path.as_ref().unwrap();
+    let audio_file_path = Path::new(afp.as_str());
+    let audio_file = match File::open(audio_file_path) {
+        Ok(it) => it,
+        Err(err) => {
+            error!("[Player] Audio file '{:?}' not exists, try next...", err);
+            return None
+        },
+    };
+    let file = BufReader::new(audio_file);
+    let source_result = Decoder::new_flac(file);
 
-        let source = match source_result {
-            Ok(file) => file,
-            Err(err) => {
-                error!("[Player] Audio file '{:?}' decode error, try next...", err);
-                return;
-            },
-        };
+    match source_result {
+        Ok(file) => Some(file),
+        Err(err) => {
+            error!("[Player] Audio file '{:?}' decode error, try next...", err);
+            return None
+        },
+    }
+}
 
-        let sink = Sink::try_new(&stream_handle).unwrap();
-        sink.append(source);
-        sink.play();
-        sink.sleep_until_end();
-    });
+fn player(playlist: Playlist) {
+    let (_stream, stream_handle) = retry(OutputStream::try_default);
+    let sink = Sink::try_new(&stream_handle).unwrap();
+    
+    sink.set_speed(10.0);
+    sink.play();
+
+    loop {
+        match sink.empty() {
+            true => {
+                match playlist.pop() {
+                    Some(track) => {  
+                        let source = source(track);
+                        if source.is_some() {
+                            sink.append(source.unwrap());
+                        }
+                    }
+                    None => thread::sleep(Duration::from_secs(1)),
+                }
+            },
+            false => thread::sleep(Duration::from_secs(1)),
+        }
+    }
 }
 
 fn downloader(session: Session, bus: EventBus) {
@@ -176,9 +192,9 @@ fn downloader_module(session: Session, bus: EventBus) {
     });
 }
 
-fn player_module(_: Session, bus: EventBus) {
+fn player_module(_: Session, playlist: Playlist) {
     let player_thread = thread::spawn(|| {
-        let _ = player(bus);
+        let _ = player(playlist);
     });
 
     player_thread.join().expect("oops! the [player] thread panicked");
@@ -190,11 +206,14 @@ fn main() {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let bus = EventBus::new();
+    let playlist = Playlist::new();
+    let bus = EventBus::new(playlist.clone());
     let session = Session::init_from_config_file().unwrap();
     
     discovery_module_favorites(session.clone(), bus.clone());
     discovery_module_categories_for_you(session.clone(), bus.clone());
+
     downloader_module(session.clone(), bus.clone());
-    player_module(session.clone(), bus.clone());
+    
+    player_module(session.clone(), playlist.clone());
 }
