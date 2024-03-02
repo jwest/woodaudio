@@ -78,8 +78,7 @@ impl Playlist {
     }
 
     pub fn push_force(&self, tracks: Vec<Track>) {
-        info!("[Playlist] Playlist size: {:?}", self.receiver.len());
-        debug!("[Playlist] Priority track added: {:?}", tracks);
+        info!("[Playlist] Priority track added: {:?}", tracks);
         
         loop {
             match self.receiver.try_recv() {
@@ -88,12 +87,8 @@ impl Playlist {
             }
         }
 
-        info!("[Playlist] Playlist size: {:?}", self.receiver.len());
-
         tracks.iter()
             .for_each(|t| { let _ = self.sender.send(t.clone()); });
-
-        info!("[Playlist] Playlist size: {:?}", self.receiver.len());
     }
 
     pub fn pop(&self) -> Option<Track> {

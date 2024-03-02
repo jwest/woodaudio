@@ -233,7 +233,6 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                                     file_path: None,
                                  };
                                 let download_file = download_file(&track, &session).unwrap().unwrap();
-                                info!("[Server control] force {:?}", download_file);
                                 
                                 playlist.push_force([download_file].to_vec());
                                 player_bus.call(eventbus::PlayerBusAction::NextSong);
@@ -245,13 +244,9 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                             let album = session.get_album(album_id.unwrap()).unwrap();
                             let mut tracks: Vec<Track> = vec![];
 
-                            info!("[Server control] force album {:?}", album);
                             if let serde_json::Value::Array(items) = &album["items"] {
-                                info!("[Server control] force ITEMS");
                                 for item in items {
-                                    info!("[Server control] force ITEM");
                                     if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                                        info!("[Server control] force adSupportedStreamReady");
                                         let track = Track { 
                                             id: item["id"].as_i64().unwrap().to_string(),
                                             full_name: format!("{} - {}", item["artist"]["name"], item["title"]), 
@@ -259,7 +254,6 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                                         };
                                         let download_file = download_file(&track, &session).unwrap().unwrap();
                                         tracks.push(download_file);
-                                        info!("[Server control] force {:?}", track);
                                     }
                                 }
                             }
@@ -273,13 +267,9 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                             let artist = session.get_artist(artist_id.unwrap()).unwrap();
                             let mut tracks: Vec<Track> = vec![];
 
-                            info!("[Server control] force artist {:?}", artist);
                             if let serde_json::Value::Array(items) = &artist["items"] {
-                                info!("[Server control] force ITEMS");
                                 for item in items {
-                                    info!("[Server control] force ITEM");
                                     if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                                        info!("[Server control] force adSupportedStreamReady");
                                         let track = Track { 
                                             id: item["id"].as_i64().unwrap().to_string(),
                                             full_name: format!("{} - {}", item["artist"]["name"], item["title"]), 
@@ -287,7 +277,6 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                                         };
                                         let download_file = download_file(&track, &session).unwrap().unwrap();
                                         tracks.push(download_file);
-                                        info!("[Server control] force {:?}", track);
                                     }
                                 }
                             }
