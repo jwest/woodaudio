@@ -77,6 +77,17 @@ impl Playlist {
         let _ = self.sender.send(track);
     }
 
+    pub fn clean(&self) {
+        info!("[Playlist] clean...");
+
+        loop {
+            match self.receiver.try_recv() {
+                Ok(_) => {},
+                Err(_) => break,
+            }
+        }
+    }
+
     pub fn push_force(&self, tracks: Vec<Track>) {
         info!("[Playlist] Priority track added: {:?}", tracks);
         
@@ -123,6 +134,21 @@ impl EventBus {
             track_discovered_receiver,
             playlist,
         }
+    }
+
+    pub fn push_force(&self, tracks: Vec<Track>) {
+        self.playlist.clean();
+        let mut tracks: Vec<Track> = tracks;
+
+        loop {
+            match self.track_discovered_receiver.try_recv() {
+                Ok(track) => tracks.push(track),
+                Err(_) => break,
+            }
+        }
+
+        tracks.iter()
+            .for_each(|t| { let _ = self.track_discovered_sender.send(t.clone()); });
     }
 
     pub fn track_discovered(&self, track: Track) {

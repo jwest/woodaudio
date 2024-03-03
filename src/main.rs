@@ -207,7 +207,7 @@ fn downloader_module(session: Session, bus: EventBus) {
     });
 }
 
-fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: PlayerBus) {
+fn player_bus_server_module(session: Session, bus: EventBus, playlist: Playlist, player_bus: PlayerBus) {
     thread::spawn(move || {
         let server = Server::http("0.0.0.0:8001").unwrap();
 
@@ -223,8 +223,11 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                         request.as_reader().read_to_string(&mut content).unwrap();
                         info!("[Server control] detail action play by url {}", content);
 
-                        if content.starts_with("https://tidal.com/track/") {
-                            let track_id = content.split("/").last();
+                        let result: Value = serde_json::from_str(&content).expect("Json required in body");
+                        let tidal_url = result["url"].as_str().expect("Json required url string field");
+
+                        if tidal_url.starts_with("https://tidal.com/track/") {
+                            let track_id = tidal_url.split("/").last();
 
                             if track_id.is_some() {
                                 let track = Track { 
@@ -239,8 +242,8 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                             }
                         }
 
-                        if content.starts_with("https://tidal.com/album/") {
-                            let album_id = content.split("/").last();
+                        if tidal_url.starts_with("https://tidal.com/album/") {
+                            let album_id = tidal_url.split("/").last();
                             let album = session.get_album(album_id.unwrap()).unwrap();
                             let mut tracks: Vec<Track> = vec![];
 
@@ -252,18 +255,17 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                                             full_name: format!("{} - {}", item["artist"]["name"], item["title"]), 
                                             file_path: None,
                                         };
-                                        let download_file = download_file(&track, &session).unwrap().unwrap();
-                                        tracks.push(download_file);
+                                        tracks.push(track);
                                     }
                                 }
                             }
 
-                            playlist.push_force(tracks);
+                            bus.push_force(tracks);
                             player_bus.call(eventbus::PlayerBusAction::NextSong);
                         }
 
-                        if content.starts_with("https://tidal.com/artist/") {
-                            let artist_id = content.split("/").last();
+                        if tidal_url.starts_with("https://tidal.com/artist/") {
+                            let artist_id = tidal_url.split("/").last();
                             let artist = session.get_artist(artist_id.unwrap()).unwrap();
                             let mut tracks: Vec<Track> = vec![];
 
@@ -275,13 +277,12 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                                             full_name: format!("{} - {}", item["artist"]["name"], item["title"]), 
                                             file_path: None,
                                         };
-                                        let download_file = download_file(&track, &session).unwrap().unwrap();
-                                        tracks.push(download_file);
+                                        tracks.push(track);
                                     }
                                 }
                             }
 
-                            playlist.push_force(tracks);
+                            bus.push_force(tracks);
                             player_bus.call(eventbus::PlayerBusAction::NextSong);
                         }
                     },
@@ -320,7 +321,7 @@ fn main() {
 
     downloader_module(session.clone(), bus.clone());
 
-    player_bus_server_module(session.clone(), playlist.clone(), player_bus.clone());
+    player_bus_server_module(session.clone(), bus.clone(), playlist.clone(), player_bus.clone());
 
     player_module(session.clone(), playlist.clone(), player_bus.clone());
 }
