@@ -50,10 +50,7 @@ fn get_categories_from_for_you_page(session: &Session, playlist: &Playlist) -> R
         .flat_map(|mix_tracks| shuffle_vec(mix_tracks.clone()))
         .filter(|mix_track| mix_track["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready))
         .for_each(|track| {
-            playlist.push(Track {
-                id: track["id"].as_i64().unwrap().to_string(),
-                full_name: format!("{} - {}", track["artists"][0]["name"], track["title"]), 
-            });
+            playlist.push(Track::build_from_json(track));
         });
 
     Ok(())
@@ -70,10 +67,7 @@ fn get_favorites_tracks(session: &Session, playlist: &Playlist) -> Result<(), Bo
         
         for item in shuffled_items {
             if item["item"]["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                playlist.push(Track {
-                    id: item["item"]["id"].as_i64().unwrap().to_string(),
-                    full_name: format!("{} - {}", item["item"]["artist"]["name"], item["item"]["title"]), 
-                });
+                playlist.push(Track::build_from_json(item["item"].to_owned()));
             }
         }
     }
@@ -193,6 +187,32 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                 match request.url() {
                     "/action/next" => player_bus.call(PlayerBusAction::NextSong),
                     "/action/play_pause" => player_bus.call(PlayerBusAction::PausePlay),
+                    "/action/track_radio" => {
+                        let mut content = String::new();
+                        request.as_reader().read_to_string(&mut content).unwrap();
+                        info!("[Server control] detail action play radio by track {}", content);
+
+                        let result: Value = serde_json::from_str(&content).expect("Json required in body");
+                        let tidal_url = result["url"].as_str().expect("Json required url string field");
+
+                        if tidal_url.starts_with("https://tidal.com/track/") {
+                            let track_id = tidal_url.split("/").last();
+                            let radio = session.get_track_radio(track_id.unwrap()).unwrap();
+
+                            let mut tracks: Vec<Track> = vec![];
+
+                            if let serde_json::Value::Array(items) = &radio["items"] {
+                                for item in items {
+                                    if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
+                                        tracks.push(Track::build_from_json(item.to_owned()));
+                                    }
+                                }
+                            }
+
+                            playlist.push_force(tracks);
+                            player_bus.call(PlayerBusAction::NextSong);
+                        }
+                    },
                     "/action/play_by_url" => {
                         let mut content = String::new();
                         request.as_reader().read_to_string(&mut content).unwrap();
@@ -205,12 +225,7 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                             let track_id = tidal_url.split("/").last();
 
                             if track_id.is_some() {
-                                let track = Track { 
-                                    id: track_id.unwrap().to_string(),
-                                    full_name: format!("{}", track_id.unwrap().to_string()),
-                                 };
-                                
-                                playlist.push_force(vec![track]);
+                                playlist.push_force(vec![Track::unnamed_track(track_id.unwrap().to_string())]);
                                 player_bus.call(PlayerBusAction::NextSong);
                             }
                         }
@@ -223,11 +238,7 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                             if let serde_json::Value::Array(items) = &album["items"] {
                                 for item in items {
                                     if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                                        let track = Track { 
-                                            id: item["id"].as_i64().unwrap().to_string(),
-                                            full_name: format!("{} - {}", item["artist"]["name"], item["title"]), 
-                                        };
-                                        tracks.push(track);
+                                        tracks.push(Track::build_from_json(item.to_owned()));
                                     }
                                 }
                             }
@@ -244,11 +255,7 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
                             if let serde_json::Value::Array(items) = &artist["items"] {
                                 for item in items {
                                     if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                                        let track = Track { 
-                                            id: item["id"].as_i64().unwrap().to_string(),
-                                            full_name: format!("{} - {}", item["artist"]["name"], item["title"]), 
-                                        };
-                                        tracks.push(track);
+                                        tracks.push(Track::build_from_json(item.to_owned()));
                                     }
                                 }
                             }
@@ -286,8 +293,8 @@ fn main() {
     let player_bus = PlayerBus::new();
     let session = Session::init_from_config_file().unwrap();
     
-    discovery_module_favorites(session.clone(), playlist.clone());
     discovery_module_categories_for_you(session.clone(), playlist.clone());
+    discovery_module_favorites(session.clone(), playlist.clone());
 
     downloader_module(session.clone(), playlist.clone());
 

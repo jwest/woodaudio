@@ -118,6 +118,12 @@ impl Session {
         let result: Value = serde_json::from_str(&body)?;
         Ok(result)
     }
+    pub fn get_track_radio(&self, track_id: &str) -> Result<Value, Box<dyn Error>> {
+        let response = self.request(format!("{}/tracks/{}/radio?countryCode={}&deviceType=BROWSER", self.api_path, track_id, self.country_code))?;
+        let body = response.text()?;
+        let result: Value = serde_json::from_str(&body)?;
+        Ok(result)
+    }
     pub fn get_track_url(&self, track_id: String) -> Result<String, Box<dyn Error>> {
         let response = self.request(format!("{}/tracks/{}/urlpostpaywall?sessionId={}&urlusagemode=STREAM&audioquality=HI_RES_LOSSLESS&assetpresentation=FULL", self.api_path, track_id, self.session_id))?;
         if response.status().is_success() {

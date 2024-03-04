@@ -4,17 +4,52 @@ use bytes::Bytes;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use log::{debug, info};
-
+use serde_json::Value;
 
 #[derive(Clone)]
 pub struct Track {
     pub id: String,
-    pub full_name: String,
+    pub title: String,
+    pub artist_name: String,
+    pub album_name: String,
+    pub duration: Duration,
+}
+
+impl Track {
+    pub fn build_from_json(item: Value) -> Track {
+        Track {
+            id: item["id"].as_i64().unwrap().to_string(),
+            title: format!("{}", item["title"]),
+            artist_name: format!("{}", item["artist"]["name"]),
+            album_name: format!("{}", item["album"]["title"]),
+            duration: Duration::from_secs(item["duration"].as_u64().unwrap_or_default()),
+        }
+    }
+    
+    pub fn unnamed_track(id: String) -> Track {
+        Track {
+            id: id,
+            title: "unnamed".to_string(),
+            artist_name: "unnamed".to_string(),
+            album_name: "unnamed".to_string(),
+            duration: Duration::from_secs(0),
+        }
+    }
+
+    fn format_duration(&self) -> String {
+        let seconds = self.duration.as_secs() % 60;
+        let minutes = (self.duration.as_secs() / 60) % 60;
+        format!("{}:{}", minutes, seconds)
+    }
+
+    pub fn full_name(&self) -> String {
+        format!("{} - {}: {} ({})", self.artist_name, self.album_name, self.title, self.format_duration())
+    }
 }
 
 impl fmt::Debug for Track {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Track: {}, {}", self.id, self.full_name)
+        write!(f, "Track: {}, {}", self.id, self.full_name())
     }
 }
 
@@ -26,27 +61,7 @@ pub struct BufferedTrack {
 
 impl fmt::Debug for BufferedTrack {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BufferedTrack: {}, {}", self.track.id, self.track.full_name)
-    }
-}
-
-trait BufforableTrack {
-    fn load(&self) -> BufferedTrack;
-}
-
-impl BufforableTrack for Track {
-    fn load(&self) -> BufferedTrack {
-        BufferedTrack { track: self.to_owned(), stream: Bytes::new() }
-    }
-}
-
-trait UnbufforableTrack {
-    fn unload(&self) -> Track;
-}
-
-impl UnbufforableTrack for BufferedTrack {
-    fn unload(&self) -> Track {
-        Track { id: self.track.id.to_owned(), full_name: self.track.full_name.to_owned() }
+        write!(f, "BufferedTrack: {}, {}", self.track.id, self.track.full_name())
     }
 }
 
@@ -120,7 +135,7 @@ impl Playlist {
 
         loop {
             match self.buffered_receiver.try_recv() {
-                Ok(buffered_track) => tracks.push(buffered_track.unload()),
+                Ok(buffered_track) => tracks.push(buffered_track.track),
                 Err(_) => break,
             }
         }
