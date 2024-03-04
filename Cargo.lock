@@ -2164,6 +2164,7 @@ dependencies = [
 name = "woodaudio-player"
 version = "0.3.0"
 dependencies = [
+ "bytes",
  "crossbeam-channel",
  "env_logger",
  "home",
@@ -2175,6 +2176,5 @@ dependencies = [
  "serde",
  "serde_json",
  "shellexpand",
- "tempfile",
  "tiny_http",
 ]

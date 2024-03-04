@@ -1,13 +1,9 @@
 use env_logger::Target;
 use rodio::{OutputStream, Decoder, Sink};
 use serde_json::Value;
-use tempfile::NamedTempFile;
 
 use std::error::Error;
-use std::fs::File;
-use std::io::{Cursor, BufReader};
-use std::path::Path;
-use std::str::FromStr;
+use std::io::Cursor;
 use std::time::Duration;
 use std::thread;
 
@@ -15,8 +11,11 @@ use rand::thread_rng;
 use rand::seq::SliceRandom;
 use log::{error, info};
 
-mod eventbus;
-use eventbus::{EventBus, PlayerBus, Playlist, Track};
+mod playerbus;
+use playerbus::{PlayerBus, PlayerBusAction};
+
+mod playlist;
+use playlist::{BufferedTrack, Playlist, Track};
 
 mod session;
 use session::Session;
@@ -40,7 +39,7 @@ fn parse_modules(value: Value) -> Result<Vec<Value>, Box<dyn Error>> {
     Ok(modules)
 }
 
-fn get_categories_from_for_you_page(session: &Session, bus: &EventBus) -> Result<(), Box<dyn Error>> {
+fn get_categories_from_for_you_page(session: &Session, playlist: &Playlist) -> Result<(), Box<dyn Error>> {
     let v = session.get_page_for_you()?;
     let mixes = parse_modules(v)?;
 
@@ -51,17 +50,16 @@ fn get_categories_from_for_you_page(session: &Session, bus: &EventBus) -> Result
         .flat_map(|mix_tracks| shuffle_vec(mix_tracks.clone()))
         .filter(|mix_track| mix_track["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready))
         .for_each(|track| {
-            let _ = bus.track_discovered(Track { 
+            playlist.push(Track {
                 id: track["id"].as_i64().unwrap().to_string(),
                 full_name: format!("{} - {}", track["artists"][0]["name"], track["title"]), 
-                file_path: None,
             });
         });
 
     Ok(())
 }
 
-fn get_favorites_tracks(session: &Session, bus: &EventBus) -> Result<(), Box<dyn Error>> {
+fn get_favorites_tracks(session: &Session, playlist: &Playlist) -> Result<(), Box<dyn Error>> {
     let v = session.get_favorites()?;
 
     if let serde_json::Value::Array(items) = &v["items"] {
@@ -72,10 +70,9 @@ fn get_favorites_tracks(session: &Session, bus: &EventBus) -> Result<(), Box<dyn
         
         for item in shuffled_items {
             if item["item"]["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                let _ = bus.track_discovered(Track { 
+                playlist.push(Track {
                     id: item["item"]["id"].as_i64().unwrap().to_string(),
                     full_name: format!("{} - {}", item["item"]["artist"]["name"], item["item"]["title"]), 
-                    file_path: None,
                 });
             }
         }
@@ -84,7 +81,7 @@ fn get_favorites_tracks(session: &Session, bus: &EventBus) -> Result<(), Box<dyn
     Ok(())
 }
 
-fn download_file(track: &Track, session: &Session) -> Result<Option<Track>, Box<dyn Error>> {
+fn download_file(track: Track, session: &Session) -> Result<BufferedTrack, Box<dyn Error>> {
     for _ in 1..5 {
         let url = session.get_track_url(track.id.clone())?;
         
@@ -93,18 +90,12 @@ fn download_file(track: &Track, session: &Session) -> Result<Option<Track>, Box<
             continue;
         }
 
-        let (mut tmp_file, tmp_path) = NamedTempFile::new()?.keep()?;
-        let mut content =  Cursor::new(file_response.bytes()?);
-
-        std::io::copy(&mut content, &mut tmp_file)?;
-
-        return Ok(Some(Track {
-            full_name: track.full_name.clone(),
-            id: track.id.clone(),
-            file_path: Some(String::from_str(tmp_path.to_str().unwrap())?),
-        }))
+        return Ok(BufferedTrack {
+            track: track,
+            stream: file_response.bytes()?,
+        })
     }
-    Ok(None)
+    panic!("Track Download fail!");
 }
 
 fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
@@ -118,18 +109,8 @@ fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
     }
 }
 
-fn source(track: Track) -> Option<Decoder<BufReader<File>>> {
-    let afp = track.file_path.as_ref().unwrap();
-    let audio_file_path = Path::new(afp.as_str());
-    let audio_file = match File::open(audio_file_path) {
-        Ok(it) => it,
-        Err(err) => {
-            error!("[Player] Audio file '{:?}' not exists, try next...", err);
-            return None
-        },
-    };
-    let file = BufReader::new(audio_file);
-    let source_result = Decoder::new_flac(file);
+fn source(track: BufferedTrack) -> Option<Decoder<std::io::Cursor<bytes::Bytes>>> {
+    let source_result = Decoder::new_flac(Cursor::new(track.stream));
 
     match source_result {
         Ok(file) => Some(file),
@@ -148,17 +129,17 @@ fn player(playlist: Playlist, player_bus: PlayerBus) {
 
     loop {
         match player_bus.read() {
-            eventbus::PlayerBusAction::PausePlay => {
+            PlayerBusAction::PausePlay => {
                 if sink.is_paused() {
                     sink.play();
                 } else {
                     sink.pause();
                 }
             },
-            eventbus::PlayerBusAction::NextSong => {
+            PlayerBusAction::NextSong => {
                 sink.clear();
             },
-            eventbus::PlayerBusAction::None => {},
+            PlayerBusAction::None => {},
         };
         match sink.empty() {
             true => {
@@ -178,36 +159,30 @@ fn player(playlist: Playlist, player_bus: PlayerBus) {
     }
 }
 
-fn downloader(session: Session, bus: EventBus) {
-    bus.on_track_discovered(|track| {
-        match download_file(track, &session) {
-            Ok(file) => if file.is_some() { 
-                bus.track_downloaded(file.unwrap());
-            },
-            Err(err) => println!("{:?}", err),
-        }
-    });
-}
-
-fn discovery_module_favorites(session: Session, bus: EventBus) {
+fn discovery_module_favorites(session: Session, playlist: Playlist) {
     thread::spawn(move || {
-        let _ = get_favorites_tracks(&session, &bus);
+        let _ = get_favorites_tracks(&session, &playlist);
     });
 }
 
-fn discovery_module_categories_for_you(session: Session, bus: EventBus) {
+fn discovery_module_categories_for_you(session: Session, playlist: Playlist) {
     thread::spawn(move || {
-       let _ = get_categories_from_for_you_page(&session, &bus);
+       let _ = get_categories_from_for_you_page(&session, &playlist);
     });
 }
 
-fn downloader_module(session: Session, bus: EventBus) {
+fn downloader_module(session: Session, playlist: Playlist) {
     thread::spawn(move || {
-        let _ = downloader(session, bus);
+        playlist.buffer_worker(|track| {
+            match download_file(track, &session) {
+                Ok(buffered_track) => return buffered_track,
+                Err(err) => panic!("{:?}", err),
+            }
+        });
     });
 }
 
-fn player_bus_server_module(session: Session, bus: EventBus, playlist: Playlist, player_bus: PlayerBus) {
+fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: PlayerBus) {
     thread::spawn(move || {
         let server = Server::http("0.0.0.0:8001").unwrap();
 
@@ -216,8 +191,8 @@ fn player_bus_server_module(session: Session, bus: EventBus, playlist: Playlist,
                 info!("[Server control] {}", request.url());
 
                 match request.url() {
-                    "/action/next" => player_bus.call(eventbus::PlayerBusAction::NextSong),
-                    "/action/play_pause" => player_bus.call(eventbus::PlayerBusAction::PausePlay),
+                    "/action/next" => player_bus.call(PlayerBusAction::NextSong),
+                    "/action/play_pause" => player_bus.call(PlayerBusAction::PausePlay),
                     "/action/play_by_url" => {
                         let mut content = String::new();
                         request.as_reader().read_to_string(&mut content).unwrap();
@@ -233,12 +208,10 @@ fn player_bus_server_module(session: Session, bus: EventBus, playlist: Playlist,
                                 let track = Track { 
                                     id: track_id.unwrap().to_string(),
                                     full_name: format!("{}", track_id.unwrap().to_string()),
-                                    file_path: None,
                                  };
-                                let download_file = download_file(&track, &session).unwrap().unwrap();
                                 
-                                playlist.push_force([download_file].to_vec());
-                                player_bus.call(eventbus::PlayerBusAction::NextSong);
+                                playlist.push_force(vec![track]);
+                                player_bus.call(PlayerBusAction::NextSong);
                             }
                         }
 
@@ -253,15 +226,14 @@ fn player_bus_server_module(session: Session, bus: EventBus, playlist: Playlist,
                                         let track = Track { 
                                             id: item["id"].as_i64().unwrap().to_string(),
                                             full_name: format!("{} - {}", item["artist"]["name"], item["title"]), 
-                                            file_path: None,
                                         };
                                         tracks.push(track);
                                     }
                                 }
                             }
 
-                            bus.push_force(tracks);
-                            player_bus.call(eventbus::PlayerBusAction::NextSong);
+                            playlist.push_force(tracks);
+                            player_bus.call(PlayerBusAction::NextSong);
                         }
 
                         if tidal_url.starts_with("https://tidal.com/artist/") {
@@ -275,15 +247,14 @@ fn player_bus_server_module(session: Session, bus: EventBus, playlist: Playlist,
                                         let track = Track { 
                                             id: item["id"].as_i64().unwrap().to_string(),
                                             full_name: format!("{} - {}", item["artist"]["name"], item["title"]), 
-                                            file_path: None,
                                         };
                                         tracks.push(track);
                                     }
                                 }
                             }
 
-                            bus.push_force(tracks);
-                            player_bus.call(eventbus::PlayerBusAction::NextSong);
+                            playlist.push_force(tracks);
+                            player_bus.call(PlayerBusAction::NextSong);
                         }
                     },
                     _ => {}
@@ -313,15 +284,14 @@ fn main() {
 
     let playlist = Playlist::new();
     let player_bus = PlayerBus::new();
-    let bus = EventBus::new(playlist.clone());
     let session = Session::init_from_config_file().unwrap();
     
-    discovery_module_favorites(session.clone(), bus.clone());
-    discovery_module_categories_for_you(session.clone(), bus.clone());
+    discovery_module_favorites(session.clone(), playlist.clone());
+    discovery_module_categories_for_you(session.clone(), playlist.clone());
 
-    downloader_module(session.clone(), bus.clone());
+    downloader_module(session.clone(), playlist.clone());
 
-    player_bus_server_module(session.clone(), bus.clone(), playlist.clone(), player_bus.clone());
+    player_bus_server_module(session.clone(), playlist.clone(), player_bus.clone());
 
     player_module(session.clone(), playlist.clone(), player_bus.clone());
 }
