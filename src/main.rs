@@ -7,8 +7,8 @@ use std::io::Cursor;
 use std::time::Duration;
 use std::thread;
 
-use rand::thread_rng;
-use rand::seq::SliceRandom;
+// use rand::thread_rng;
+// use rand::seq::SliceRandom;
 use log::{error, info};
 
 mod playerbus;
@@ -22,11 +22,15 @@ use session::Session;
 
 use tiny_http::{Server, Response};
 
+use macroquad::prelude::*;
+use macroquad::ui::{hash, root_ui, widgets, Skin};
+
 fn shuffle_vec(items: Vec<Value>) -> Vec<Value> {
-    let mut rng_items = thread_rng();
-    let mut items_clone = items.clone();
-    items_clone.shuffle(&mut rng_items);
-    items_clone
+    // let mut rng_items = thread_rng();
+    // let mut items_clone = items.clone();
+    // items_clone.shuffle(&mut rng_items);
+    // items_clone
+    items
 }
 
 fn parse_modules(value: Value) -> Result<Vec<Value>, Box<dyn Error>> {
@@ -61,9 +65,9 @@ fn get_favorites_tracks(session: &Session, playlist: &Playlist) -> Result<(), Bo
 
     if let serde_json::Value::Array(items) = &v["items"] {
 
-        let mut rng = thread_rng();
+        // let mut rng = thread_rng();
         let mut shuffled_items = items.clone();
-        shuffled_items.shuffle(&mut rng);
+        // shuffled_items.shuffle(&mut rng);
         
         for item in shuffled_items {
             if item["item"]["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
@@ -133,8 +137,9 @@ fn player(playlist: Playlist, player_bus: PlayerBus) {
             PlayerBusAction::NextSong => {
                 sink.clear();
             },
-            PlayerBusAction::None => {},
+            _ => {},
         };
+
         match sink.empty() {
             true => {
                 match playlist.pop() {
@@ -275,30 +280,128 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
     });
 }
 
-fn player_module(_: Session, playlist: Playlist, player_bus: PlayerBus) {
-    let player_thread = thread::spawn(|| {
-        let _ = player(playlist, player_bus);
+fn gui_module(session: Session, playlist: Playlist) {
+    thread::spawn(move || {
+        // MainWindow::new().unwrap().run().unwrap();
     });
-
-    player_thread.join().expect("oops! the [player] thread panicked");
 }
 
-fn main() {
-    env_logger::Builder::from_default_env()
-        .target(Target::Stdout)
-        .filter_level(log::LevelFilter::Info)
-        .init();
+fn player_module(_: Session, playlist: Playlist, player_bus: PlayerBus) {
+    // let player_thread = thread::spawn(|| {
+    //     let _ = player(playlist, player_bus);
+    // });
 
-    let playlist = Playlist::new();
-    let player_bus = PlayerBus::new();
-    let session = Session::init_from_config_file().unwrap();
+    // player_thread.join().expect("oops! the [player] thread panicked");
+    thread::spawn(move || {
+        let _ = player(playlist, player_bus);
+    });
+}
+
+fn conf() -> Conf {
+    Conf {
+      window_title: "Woodaudio".to_string(), //this field is not optional!
+      fullscreen: true,
+      //you can add other options too, or just use the default ones:
+      ..Default::default()
+    }
+}
+
+#[macroquad::main(conf)]
+async fn main() {
+    // env_logger::Builder::from_default_env()
+    //     .target(Target::Stdout)
+    //     .filter_level(log::LevelFilter::Info)
+    //     .init();
+
+    // let playlist = Playlist::new();
+    // let player_bus = PlayerBus::new();
+    // let session = Session::init_from_config_file().unwrap();
     
-    discovery_module_categories_for_you(session.clone(), playlist.clone());
-    discovery_module_favorites(session.clone(), playlist.clone());
+    // discovery_module_categories_for_you(session.clone(), playlist.clone());
+    // discovery_module_favorites(session.clone(), playlist.clone());
 
-    downloader_module(session.clone(), playlist.clone());
+    // downloader_module(session.clone(), playlist.clone());
 
-    player_bus_server_module(session.clone(), playlist.clone(), player_bus.clone());
+    // player_bus_server_module(session.clone(), playlist.clone(), player_bus.clone());
 
-    player_module(session.clone(), playlist.clone(), player_bus.clone());
+    // gui_module(session.clone(), playlist.clone());
+
+    // player_module(session.clone(), playlist.clone(), player_bus.clone());
+
+    let font_title = load_ttf_font("./static/NotoSans_Condensed-SemiBold.ttf")
+        .await
+        .unwrap();
+
+    let font_subtitle = load_ttf_font("./static/NotoSans_Condensed-Light.ttf")
+        .await
+        .unwrap();
+
+    let font_icons = load_ttf_font("./static/fontello.ttf")
+        .await
+        .unwrap();
+
+    let mut button_play_clicked = false;
+
+    loop {
+        clear_background(BLACK);
+
+        let rectangle = Rect::new(16.0, screen_height() - 16.0 - 32.0, 32.0, 32.0);
+        if is_mouse_button_pressed(MouseButton::Left) {
+            let (mouse_x,mouse_y) = mouse_position();
+            let rectangle_rect = Rect::new(mouse_x,mouse_y,1.0, 1.0);
+   
+            if rectangle_rect.intersect(rectangle).is_some() {
+                button_play_clicked = true;
+            }
+       }
+
+        draw_rectangle(screen_width() / 2.0 - 60.0, 100.0, 120.0, 60.0, GREEN);
+        draw_text_ex("Come On Up To The House", 16.0, 32.0,  TextParams { font_size: 24, font: Some(&font_title), color: WHITE, ..Default::default() },);
+        draw_text_ex("Tom Waits - Mule Variations (Remastered)", 16.0, 56.0, TextParams { font_size: 20, font: Some(&font_subtitle), color: WHITE, ..Default::default() },);
+        
+        draw_rectangle(16.0, 74.0, screen_width() - 16.0 * 8.0, 4.0, WHITE);
+        draw_text_ex("0:00 - 3:14", 440.0, 80.0, TextParams { font_size: 16, font: Some(&font_subtitle), color: WHITE, ..Default::default() },);
+
+        let icons_text = "    ";
+        let icons_size = 48;
+        let center = get_text_center(icons_text, Some(&font_icons), icons_size, 1.0, 0.0);
+        draw_text_ex(
+            icons_text,
+            screen_width() / 2.0 - center.x,
+            screen_height() / 1.2 - center.y,
+            TextParams {
+                font_size: icons_size,
+                font_scale: 1.0,
+                font: Some(&font_icons),
+                ..Default::default()
+            },
+        );
+
+        draw_rectangle(16.0, screen_height() - 16.0 - 32.0, 32.0, 32.0, if button_play_clicked { WHITE } else { GRAY });
+        draw_text_ex(
+            "",
+            16.0,
+            screen_height() - 16.0 - 48.0,
+            TextParams {
+                font_size: 32,
+                font_scale: 1.0,
+                font: Some(&font_icons),
+                ..Default::default()
+            },
+        );
+
+        // let default_skin = root_ui().default_skin().clone();
+
+        // root_ui().push_skin(&default_skin);
+
+        // root_ui().window(hash!(), vec2(20., 250.), vec2(300., 300.), |ui| {
+        //     widgets::Button::new("Play")
+        //         .position(vec2(65.0, 15.0))
+        //         .ui(ui);
+        // });
+
+        button_play_clicked = false;
+
+        next_frame().await
+    }
 }
