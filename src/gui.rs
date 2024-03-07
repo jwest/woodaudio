@@ -72,7 +72,7 @@ impl Gui {
                 ..Default::default()
             });
     
-            draw_texture_ex(&cover_foreground, screen_width() / 2.0 - 160.0, 96.0, WHITE, DrawTextureParams {
+            draw_texture_ex(&cover_foreground, screen_width() / 2.0 - 160.0, 112.0, WHITE, DrawTextureParams {
                 rotation: 0.0,
                 ..Default::default()
             });
@@ -91,7 +91,7 @@ impl Gui {
             let buttons_widget_width = f32::from(button_len) * button_size + (f32::from(button_len)-1.0) * button_margin;
             let buttons_start_position = screen_width() / 2.0 - buttons_widget_width / 2.0;
     
-            let button_y = screen_height() - 72.0 - button_size;
+            let button_y = screen_height() - 48.0 - button_size;
     
             let time_duration_actual = Instant::now() - self.track_state.playing_time;
             let seconds = time_duration_actual.as_secs() % 60;
@@ -107,7 +107,7 @@ impl Gui {
     
             draw_rectangle(
                 buttons_start_position - 48.0, 
-                button_y - 32.0, 
+                button_y - 24.0, 
                 buttons_widget_width + 48.0 + 48.0, 
                 4.0, 
                 GRAY
@@ -115,7 +115,7 @@ impl Gui {
     
             draw_rectangle(
                 buttons_start_position - 48.0, 
-                button_y - 32.0, 
+                button_y - 24.0, 
                 (buttons_widget_width + 48.0 + 48.0) * time_percentage, 
                 4.0, 
                 WHITE
@@ -124,14 +124,14 @@ impl Gui {
             draw_text_ex(
                 time_text_actual.as_str(), 
                 buttons_start_position - 96.0, 
-                button_y - 24.0 - time_text_center.y - 1.0, 
+                button_y - 16.0 - time_text_center.y - 1.0, 
                 TextParams { font_size: time_text_font_size, font: Some(&font_subtitle), color: WHITE, ..Default::default() },
             );
     
             draw_text_ex(
                 time_text_end.as_str(), 
                 buttons_start_position + buttons_widget_width + 96.0,
-                button_y - 24.0 - time_text_center.y - 1.0, 
+                button_y - 16.0 - time_text_center.y - 1.0, 
                 TextParams { font_size: time_text_font_size, font: Some(&font_subtitle), color: WHITE, ..Default::default() },
             );
     
