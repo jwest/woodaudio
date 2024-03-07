@@ -125,7 +125,7 @@ impl Session {
         Ok(result)
     }
     pub fn get_track_url(&self, track_id: String) -> Result<String, Box<dyn Error>> {
-        let response = self.request(format!("{}/tracks/{}/urlpostpaywall?sessionId={}&urlusagemode=STREAM&audioquality=HI_RES_LOSSLESS&assetpresentation=FULL", self.api_path, track_id, self.session_id))?;
+        let response = self.request(format!("{}/tracks/{}/urlpostpaywall?sessionId={}&urlusagemode=STREAM&audioquality=LOSSLESS&assetpresentation=FULL", self.api_path, track_id, self.session_id))?;
         if response.status().is_success() {
             let url = response.json::<ResponseMedia>()?.urls[0].clone();
             Ok(url)
