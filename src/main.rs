@@ -1,36 +1,41 @@
+use bytes::Bytes;
 use env_logger::Target;
+use gui::Gui;
+use macroquad::window::Conf;
 use rodio::{OutputStream, Decoder, Sink};
 use serde_json::Value;
+use tempfile::NamedTempFile;
 
 use std::error::Error;
-use std::io::Cursor;
-use std::time::Duration;
-use std::thread;
+use std::io::{Cursor, Read};
+use image::io::Reader as ImageReader;
 
-// use rand::thread_rng;
-// use rand::seq::SliceRandom;
-use log::{error, info};
+use std::time::{Duration, Instant};
+use std::{clone, thread};
+
+use ::rand::thread_rng;
+use ::rand::seq::SliceRandom;
+use log::{debug, error, info};
+
+use tiny_http::{Server, Response};
 
 mod playerbus;
-use playerbus::{PlayerBus, PlayerBusAction};
+use playerbus::{PlayerBus, PlayerBusAction, PlayerTrackState};
 
 mod playlist;
-use playlist::{BufferedTrack, Playlist, Track};
+use playlist::{BufferedTrack, Cover, Playlist, Track};
 
 mod session;
 use session::Session;
 
-use tiny_http::{Server, Response};
+mod gui;
 
-use macroquad::prelude::*;
-use macroquad::ui::{hash, root_ui, widgets, Skin};
 
 fn shuffle_vec(items: Vec<Value>) -> Vec<Value> {
-    // let mut rng_items = thread_rng();
-    // let mut items_clone = items.clone();
-    // items_clone.shuffle(&mut rng_items);
-    // items_clone
-    items
+    let mut rng_items = thread_rng();
+    let mut items_clone = items.clone();
+    (&mut items_clone).shuffle(&mut rng_items);
+    items_clone
 }
 
 fn parse_modules(value: Value) -> Result<Vec<Value>, Box<dyn Error>> {
@@ -65,9 +70,9 @@ fn get_favorites_tracks(session: &Session, playlist: &Playlist) -> Result<(), Bo
 
     if let serde_json::Value::Array(items) = &v["items"] {
 
-        // let mut rng = thread_rng();
+        let mut rng = thread_rng();
         let mut shuffled_items = items.clone();
-        // shuffled_items.shuffle(&mut rng);
+        shuffled_items.shuffle(&mut rng);
         
         for item in shuffled_items {
             if item["item"]["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
@@ -77,6 +82,39 @@ fn get_favorites_tracks(session: &Session, playlist: &Playlist) -> Result<(), Bo
     }
 
     Ok(())
+}
+
+fn download_album_cover(cover_url: String) -> Result<Cover, Box<dyn Error>> {
+    debug!("[Downloader] Prepare cover '{}'...", cover_url);
+
+    let file_response = reqwest::blocking::get(&cover_url)?;
+
+    let cover = ImageReader::new(Cursor::new(file_response.bytes()?)).with_guessed_format()?.decode()?;
+    let background = cover.clone();
+
+    let file = NamedTempFile::new()?;
+    let path = file.into_temp_path();
+    let path_str = path.keep()?.to_str().unwrap().to_string();
+    
+    let _ = cover
+        .resize(320, 320, image::imageops::FilterType::Nearest)
+        .save_with_format(&path_str, image::ImageFormat::Png)
+        .unwrap();
+
+    let background_file = NamedTempFile::new()?;
+    let background_path = background_file.into_temp_path();
+    let background_path_str = background_path.keep()?.to_str().unwrap().to_string();
+    
+    let _ = background
+        .brighten(-75)
+        .resize(1024, 1024, image::imageops::FilterType::Nearest)
+        .blur(10.0)
+        .save_with_format(&background_path_str, image::ImageFormat::Png)
+        .unwrap();
+    
+    debug!("[Downloader] Cover prepared '{}', {}", cover_url, path_str);
+
+    Ok(Cover { background: background_path_str, foreground: path_str })
 }
 
 fn download_file(track: Track, session: &Session) -> Result<BufferedTrack, Box<dyn Error>> {
@@ -89,10 +127,15 @@ fn download_file(track: Track, session: &Session) -> Result<BufferedTrack, Box<d
         }
 
         return Ok(BufferedTrack {
-            track: track,
+            track: track.clone(),
             stream: file_response.bytes()?,
+            cover: match download_album_cover(track.album_image) {
+                Ok(cover) => Some(cover),
+                Err(_) => None,
+            },
         })
     }
+
     panic!("Track Download fail!");
 }
 
@@ -144,13 +187,28 @@ fn player(playlist: Playlist, player_bus: PlayerBus) {
             true => {
                 match playlist.pop() {
                     Some(track) => {  
-                        let source = source(track);
+                        let source = source(track.clone());
                         if source.is_some() {
+                            let playing_track = track.track;
+                            player_bus.set_state(PlayerTrackState {
+                                player_state: playerbus::PlayerState::Playing,
+                                id: playing_track.id,
+                                title: playing_track.title,
+                                artist_name: playing_track.artist_name,
+                                album_name: playing_track.album_name,
+                                cover: track.cover.as_ref().map(|c| c.foreground.to_string()),
+                                cover_background: track.cover.as_ref().map(|c| c.background.to_string()),
+                                duration: playing_track.duration,
+                                playing_time: Instant::now(),
+                            });
                             sink.append(source.unwrap());
                             sink.play();
                         }
                     }
-                    None => thread::sleep(Duration::from_millis(200)),
+                    None => {
+                        player_bus.set_state(PlayerTrackState::default_state());
+                        thread::sleep(Duration::from_millis(200));
+                    }
                 }
             },
             false => thread::sleep(Duration::from_millis(200)),
@@ -280,18 +338,7 @@ fn player_bus_server_module(session: Session, playlist: Playlist, player_bus: Pl
     });
 }
 
-fn gui_module(session: Session, playlist: Playlist) {
-    thread::spawn(move || {
-        // MainWindow::new().unwrap().run().unwrap();
-    });
-}
-
 fn player_module(_: Session, playlist: Playlist, player_bus: PlayerBus) {
-    // let player_thread = thread::spawn(|| {
-    //     let _ = player(playlist, player_bus);
-    // });
-
-    // player_thread.join().expect("oops! the [player] thread panicked");
     thread::spawn(move || {
         let _ = player(playlist, player_bus);
     });
@@ -300,108 +347,34 @@ fn player_module(_: Session, playlist: Playlist, player_bus: PlayerBus) {
 fn conf() -> Conf {
     Conf {
       window_title: "Woodaudio".to_string(), //this field is not optional!
-      fullscreen: true,
-      //you can add other options too, or just use the default ones:
+      fullscreen: false,
+      window_height: 600,
+      window_width: 1024,
       ..Default::default()
     }
 }
 
 #[macroquad::main(conf)]
 async fn main() {
-    // env_logger::Builder::from_default_env()
-    //     .target(Target::Stdout)
-    //     .filter_level(log::LevelFilter::Info)
-    //     .init();
+    env_logger::Builder::from_default_env()
+        .target(Target::Stdout)
+        .filter_level(log::LevelFilter::Info)
+        .init();
 
-    // let playlist = Playlist::new();
-    // let player_bus = PlayerBus::new();
-    // let session = Session::init_from_config_file().unwrap();
+    let playlist = Playlist::new();
+    let player_bus = PlayerBus::new();
+    let session = Session::init_from_config_file().unwrap();
     
-    // discovery_module_categories_for_you(session.clone(), playlist.clone());
-    // discovery_module_favorites(session.clone(), playlist.clone());
+    discovery_module_categories_for_you(session.clone(), playlist.clone());
+    discovery_module_favorites(session.clone(), playlist.clone());
 
-    // downloader_module(session.clone(), playlist.clone());
+    downloader_module(session.clone(), playlist.clone());
 
-    // player_bus_server_module(session.clone(), playlist.clone(), player_bus.clone());
+    player_bus_server_module(session.clone(), playlist.clone(), player_bus.clone());
 
-    // gui_module(session.clone(), playlist.clone());
+    player_module(session.clone(), playlist.clone(), player_bus.clone());
 
-    // player_module(session.clone(), playlist.clone(), player_bus.clone());
+    let mut gui = Gui::default_state();
 
-    let font_title = load_ttf_font("./static/NotoSans_Condensed-SemiBold.ttf")
-        .await
-        .unwrap();
-
-    let font_subtitle = load_ttf_font("./static/NotoSans_Condensed-Light.ttf")
-        .await
-        .unwrap();
-
-    let font_icons = load_ttf_font("./static/fontello.ttf")
-        .await
-        .unwrap();
-
-    let mut button_play_clicked = false;
-
-    loop {
-        clear_background(BLACK);
-
-        let rectangle = Rect::new(16.0, screen_height() - 16.0 - 32.0, 32.0, 32.0);
-        if is_mouse_button_pressed(MouseButton::Left) {
-            let (mouse_x,mouse_y) = mouse_position();
-            let rectangle_rect = Rect::new(mouse_x,mouse_y,1.0, 1.0);
-   
-            if rectangle_rect.intersect(rectangle).is_some() {
-                button_play_clicked = true;
-            }
-       }
-
-        draw_rectangle(screen_width() / 2.0 - 60.0, 100.0, 120.0, 60.0, GREEN);
-        draw_text_ex("Come On Up To The House", 16.0, 32.0,  TextParams { font_size: 24, font: Some(&font_title), color: WHITE, ..Default::default() },);
-        draw_text_ex("Tom Waits - Mule Variations (Remastered)", 16.0, 56.0, TextParams { font_size: 20, font: Some(&font_subtitle), color: WHITE, ..Default::default() },);
-        
-        draw_rectangle(16.0, 74.0, screen_width() - 16.0 * 8.0, 4.0, WHITE);
-        draw_text_ex("0:00 - 3:14", 440.0, 80.0, TextParams { font_size: 16, font: Some(&font_subtitle), color: WHITE, ..Default::default() },);
-
-        let icons_text = "    ";
-        let icons_size = 48;
-        let center = get_text_center(icons_text, Some(&font_icons), icons_size, 1.0, 0.0);
-        draw_text_ex(
-            icons_text,
-            screen_width() / 2.0 - center.x,
-            screen_height() / 1.2 - center.y,
-            TextParams {
-                font_size: icons_size,
-                font_scale: 1.0,
-                font: Some(&font_icons),
-                ..Default::default()
-            },
-        );
-
-        draw_rectangle(16.0, screen_height() - 16.0 - 32.0, 32.0, 32.0, if button_play_clicked { WHITE } else { GRAY });
-        draw_text_ex(
-            "",
-            16.0,
-            screen_height() - 16.0 - 48.0,
-            TextParams {
-                font_size: 32,
-                font_scale: 1.0,
-                font: Some(&font_icons),
-                ..Default::default()
-            },
-        );
-
-        // let default_skin = root_ui().default_skin().clone();
-
-        // root_ui().push_skin(&default_skin);
-
-        // root_ui().window(hash!(), vec2(20., 250.), vec2(300., 300.), |ui| {
-        //     widgets::Button::new("Play")
-        //         .position(vec2(65.0, 15.0))
-        //         .ui(ui);
-        // });
-
-        button_play_clicked = false;
-
-        next_frame().await
-    }
+    gui.gui_loop(player_bus.clone()).await;
 }

@@ -12,16 +12,24 @@ pub struct Track {
     pub title: String,
     pub artist_name: String,
     pub album_name: String,
+    pub album_image: String, // Valid resolutions: 80x80, 160x160, 320x320, 640x640, 1280x1280
     pub duration: Duration,
 }
 
 impl Track {
     pub fn build_from_json(item: Value) -> Track {
+        let cover = if item["album"]["cover"].is_string() { 
+            item["album"]["cover"].as_str().unwrap()
+        } else { 
+            "0dfd3368-3aa1-49a3-935f-10ffb39803c0" 
+        }.replace("-", "/");
+
         Track {
             id: item["id"].as_i64().unwrap().to_string(),
-            title: format!("{}", item["title"]),
-            artist_name: format!("{}", item["artist"]["name"]),
-            album_name: format!("{}", item["album"]["title"]),
+            title: item["title"].as_str().unwrap_or("").to_string(),
+            artist_name: item["artist"]["name"].as_str().unwrap_or("").to_string(),
+            album_name: item["album"]["title"].as_str().unwrap_or("").to_string(),
+            album_image: format!("https://resources.tidal.com/images/{}/{}x{}.jpg", cover, 320, 320),
             duration: Duration::from_secs(item["duration"].as_u64().unwrap_or_default()),
         }
     }
@@ -32,18 +40,19 @@ impl Track {
             title: "unnamed".to_string(),
             artist_name: "unnamed".to_string(),
             album_name: "unnamed".to_string(),
+            album_image: format!("https://resources.tidal.com/images/0dfd3368/3aa1/49a3/935f/10ffb39803c0/{}x{}.jpg", 320, 320),
             duration: Duration::from_secs(0),
         }
     }
 
-    fn format_duration(&self) -> String {
+    pub fn duration_formated(&self) -> String {
         let seconds = self.duration.as_secs() % 60;
         let minutes = (self.duration.as_secs() / 60) % 60;
-        format!("{}:{}", minutes, seconds)
+        format!("{}:{:0>2}", minutes, seconds)
     }
 
     pub fn full_name(&self) -> String {
-        format!("{} - {}: {} ({})", self.artist_name, self.album_name, self.title, self.format_duration())
+        format!("{} - {}: {} ({})", self.artist_name, self.album_name, self.title, self.duration_formated())
     }
 }
 
@@ -53,15 +62,23 @@ impl fmt::Debug for Track {
     }
 }
 
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct Cover {
+    pub foreground: String, 
+    pub background: String,
+}
+
 #[derive(Clone)]
 pub struct BufferedTrack {
     pub track: Track,
     pub stream: Bytes,
+    pub cover: Option<Cover>,
 }
 
 impl fmt::Debug for BufferedTrack {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BufferedTrack: {}, {}", self.track.id, self.track.full_name())
+        write!(f, "BufferedTrack: {}, {}, stream: {}, cover: {:?}", self.track.id, self.track.full_name(), !self.stream.is_empty(), self.cover)
     }
 }
 
