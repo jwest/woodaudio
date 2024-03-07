@@ -1,7 +1,7 @@
-use std::{io::Read, time::{Duration, Instant}};
+use std::time::{Duration, Instant};
 use macroquad::prelude::*;
 
-use crate::playerbus::{self, PlayerBus, PlayerState, PlayerTrackState};
+use crate::{discovery::DiscoveryStore, playerbus::{self, PlayerBus, PlayerState, PlayerTrackState}};
 
 pub struct Gui {
     track_state: PlayerTrackState,
@@ -14,15 +14,14 @@ impl Gui {
         let track_state = PlayerTrackState::default_state();
 
         let buttons: Vec<String> = vec![
-            "".to_string(),
-            "".to_string(), 
-            //"".to_string(), 
-            //"".to_string(), 
-            //"".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(), 
+            "".to_string(),
         ];
 
         let mut buttons_state: Vec<bool> = Vec::with_capacity(buttons.len());
-        for i in 0..buttons.len() {
+        for _i in 0..buttons.len() {
             buttons_state.push(false);
         }
 
@@ -35,7 +34,7 @@ impl Gui {
         format!("{}:{:0>2}", minutes, seconds)
     }
 
-    pub async fn gui_loop(&mut self, player_bus: PlayerBus) {
+    pub async fn gui_loop(&mut self, player_bus: PlayerBus, discovery_store: DiscoveryStore) {
         println!("Load fonts");
         let font_title = load_ttf_font_from_bytes(include_bytes!("../static/NotoSans_Condensed-SemiBold.ttf")).unwrap();
         let font_subtitle = load_ttf_font_from_bytes(include_bytes!("../static/NotoSans_Condensed-Light.ttf")).unwrap();
@@ -57,10 +56,10 @@ impl Gui {
             let new_state = player_bus.read_state();
             if new_state.is_some() {
                 self.track_state = new_state.unwrap();
-                if (self.track_state.cover.is_some()) {
+                if self.track_state.cover.is_some() {
                     cover_foreground = load_texture(self.track_state.cover.clone().unwrap().clone().as_str()).await.unwrap();
                 }
-                if (self.track_state.cover_background.is_some()) {
+                if self.track_state.cover_background.is_some() {
                     cover_background = load_texture(self.track_state.cover_background.clone().unwrap().clone().as_str()).await.unwrap();
                 }
             }
@@ -150,12 +149,17 @@ impl Gui {
                     if rectangle_rect.intersect(rectangle).is_some() {
                         self.buttons_state[i] = true;
 
-                        if (i == 0) {
+                        if i == 0 {
                             player_bus.call(playerbus::PlayerBusAction::PausePlay)
                         }
 
-                        if (i == 1) {
+                        if i == 1 {
                             player_bus.call(playerbus::PlayerBusAction::NextSong)
+                        }
+
+                        if i == 3 {
+                            let _ = discovery_store.discovery_radio(self.track_state.id.as_str());
+                            player_bus.call(playerbus::PlayerBusAction::NextSong);
                         }
                     }
                 }

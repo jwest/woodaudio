@@ -33,17 +33,6 @@ impl Track {
             duration: Duration::from_secs(item["duration"].as_u64().unwrap_or_default()),
         }
     }
-    
-    pub fn unnamed_track(id: String) -> Track {
-        Track {
-            id: id,
-            title: "unnamed".to_string(),
-            artist_name: "unnamed".to_string(),
-            album_name: "unnamed".to_string(),
-            album_image: format!("https://resources.tidal.com/images/0dfd3368/3aa1/49a3/935f/10ffb39803c0/{}x{}.jpg", 320, 320),
-            duration: Duration::from_secs(0),
-        }
-    }
 
     pub fn duration_formated(&self) -> String {
         let seconds = self.duration.as_secs() % 60;
@@ -123,9 +112,10 @@ impl Playlist {
         }
     }
 
-    pub fn push(&self, track: Track) {
-        debug!("[Playlist] Push track: {:?}", track);
-        let _ = self.sender.send(track);
+    pub fn push(&self, tracks: Vec<Track>) {
+        debug!("[Playlist] Push tracks: {:?}", tracks);
+        tracks.iter()
+            .for_each(|t| { let _ = self.sender.send(t.clone()); });
     }
 
     pub fn pop(&self) -> Option<BufferedTrack> {
