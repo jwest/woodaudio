@@ -49,7 +49,7 @@ pub fn player(playlist: Playlist, player_bus: PlayerBus) {
             PlayerBusAction::NextSong => {
                 sink.clear();
             },
-            _ => {},
+            PlayerBusAction::Waiting => {},
         };
 
         match sink.empty() {

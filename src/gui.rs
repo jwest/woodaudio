@@ -5,7 +5,6 @@ use crate::{discovery::DiscoveryStore, playerbus::{self, PlayerBus, PlayerStateC
 
 pub struct Gui {
     player_bus: PlayerBus,
-    discovery_store: DiscoveryStore,
     state: State,
     buttons: Buttons,
     fonts: Fonts,
@@ -15,22 +14,17 @@ pub struct Gui {
 
 pub trait Button {
     fn label(&self, state: State) -> String;
-    fn state(&self) -> bool;
-    fn set_state(&mut self, state: bool);
-    fn reset_state(&mut self);
     fn action(&self, state: State);
 }
 
 struct PlayPauseButton {
     player_bus: PlayerBus,
-    state: bool,
 }
 
 impl PlayPauseButton {
     fn new(player_bus: PlayerBus) -> Self {
         Self {
             player_bus,
-            state: false,
         }
     }
 }
@@ -44,18 +38,6 @@ impl Button for PlayPauseButton {
         }
     }
     
-    fn state(&self) -> bool {
-        self.state
-    }
-    
-    fn set_state(&mut self, state: bool) {
-        self.state = state
-    }
-    
-    fn reset_state(&mut self) {
-        self.state = false
-    }
-    
     fn action(&self, _: State) {
         self.player_bus.call(playerbus::PlayerBusAction::PausePlay)
     }
@@ -63,14 +45,12 @@ impl Button for PlayPauseButton {
 
 struct NextButton {
     player_bus: PlayerBus,
-    state: bool,
 }
 
 impl NextButton {
     fn new(player_bus: PlayerBus) -> Self {
         Self {
             player_bus,
-            state: false,
         }
     }
 }
@@ -80,20 +60,37 @@ impl Button for NextButton {
         "".to_string()
     }
     
-    fn state(&self) -> bool {
-        self.state
-    }
-    
-    fn set_state(&mut self, state: bool) {
-        self.state = state
-    }
-    
-    fn reset_state(&mut self) {
-        self.state = false
-    }
-    
     fn action(&self, _: State) {
         self.player_bus.call(playerbus::PlayerBusAction::NextSong)
+    }
+}
+
+struct TrackRadioButton {
+    player_bus: PlayerBus,
+    discovery_store: DiscoveryStore,
+}
+
+impl TrackRadioButton {
+    fn new(player_bus: PlayerBus, discovery_store: DiscoveryStore) -> Self {
+        Self {
+            player_bus,
+            discovery_store,
+        }
+    }
+}
+
+impl Button for TrackRadioButton {
+    fn label(&self, _: State) -> String { 
+        "".to_string()
+    }
+    
+    fn action(&self, state: State) {
+        if state.track.is_none() {
+            return;
+        }
+        self.player_bus.call(playerbus::PlayerBusAction::PausePlay);
+        let _ = self.discovery_store.discovery_radio(&state.track.unwrap().id);
+        self.player_bus.call(playerbus::PlayerBusAction::NextSong);
     }
 }
 
@@ -110,14 +107,6 @@ impl Buttons {
             size: 48.0,
             margin: 32.0,
         }
-    }
-
-    fn set_state(&mut self, i: usize, state: bool) {
-        self.buttons[i].set_state(state);
-    }
-
-    fn reset_state(&mut self) {
-        self.buttons.iter_mut().for_each(|button| button.reset_state());
     }
 
     fn widget_width(&self) -> f32 {
@@ -146,6 +135,7 @@ impl Gui {
         let buttons = Buttons::init(vec![
             Box::new(PlayPauseButton::new(player_bus.clone())),
             Box::new(NextButton::new(player_bus.clone())),
+            Box::new(TrackRadioButton::new(player_bus.clone(), discovery_store.clone())),
         ]);
 
         let fonts = Fonts {
@@ -159,7 +149,6 @@ impl Gui {
 
         Gui { 
             player_bus,
-            discovery_store,
             state, 
             buttons,
             fonts,
@@ -174,34 +163,26 @@ impl Gui {
         format!("{}:{:0>2}", minutes, seconds)
     }
 
-    pub async fn gui_loop(&mut self) {
-        println!("Load textures");
-
-        loop {
-            match self.state.player.case {
-                PlayerStateCase::Playing => {},
-                PlayerStateCase::Paused => {
-                    // self.state.player.playing_time = Some(self.state.player.playing_time.unwrap());
-                },
-                PlayerStateCase::Loading => {},
-            }
-
-            let new_state = self.player_bus.read_state();
-            if new_state.is_some() {
-                self.state = new_state.unwrap();
-                if self.state.track.is_some() {
-                    let track = self.state.track.clone().unwrap();
-                    if track.cover.is_some() {
-                        self.cover_foreground = load_texture(track.cover.clone().unwrap().foreground.clone().as_str()).await.unwrap();
-                        self.cover_background = load_texture(track.cover.clone().unwrap().background.clone().as_str()).await.unwrap();
-                    }
+    async fn update_state(&mut self) {
+        let new_state = self.player_bus.read_state();
+        if new_state.is_some() {
+            self.state = new_state.unwrap();
+            if self.state.track.is_some() {
+                let track = self.state.track.clone().unwrap();
+                if track.cover.is_some() {
+                    self.cover_foreground = load_texture(track.cover.clone().unwrap().foreground.clone().as_str()).await.unwrap();
+                    self.cover_background = load_texture(track.cover.clone().unwrap().background.clone().as_str()).await.unwrap();
                 }
             }
+        }
+    }
+
+    pub async fn gui_loop(&mut self) {
+        loop {
+            self.update_state().await;
             
             self.render();
     
-            self.buttons.reset_state();
-
             next_frame().await;
 
             std::thread::sleep(Duration::from_millis(50));
@@ -228,7 +209,7 @@ impl Gui {
         draw_text_ex(format!("{} - {}", track.artist_name, track.album_name).as_str(), 16.0, 72.0, TextParams { font_size: 24, font: Some(&self.fonts.subtitle), color: WHITE, ..Default::default() },);
     }
 
-    fn render_progress(&self, track: TrackState) {
+    fn render_progress(&mut self, track: TrackState) {
         let time_duration_actual = Instant::now() - self.state.player.playing_time.unwrap();
         let seconds = time_duration_actual.as_secs() % 60;
         let minutes = (time_duration_actual.as_secs() / 60) % 60;
@@ -269,7 +250,7 @@ impl Gui {
 
         draw_text_ex(
             time_text_end.as_str(), 
-            buttons_start_position + buttons_widget_width + 96.0,
+            buttons_start_position + buttons_widget_width + 72.0,
             button_y - 16.0 - time_text_center.y - 1.0, 
             TextParams { font_size: time_text_font_size, font: Some(&self.fonts.subtitle), color: WHITE, ..Default::default() },
         );
@@ -293,40 +274,19 @@ impl Gui {
                 let rectangle_rect = Rect::new(mouse_x,mouse_y,1.0, 1.0);
     
                 if rectangle_rect.intersect(rectangle).is_some() {
-                    button.set_state(true);
-
-                    if i == 0 {
-                        self.player_bus.call(playerbus::PlayerBusAction::PausePlay)
-                    }
-
-                    if i == 1 {
-                        self.player_bus.call(playerbus::PlayerBusAction::NextSong)
-                    }
-
-                    if i == 3 {
-                        let _ = self.discovery_store.discovery_radio(self.state.track.clone().unwrap().id.as_str());
-                        self.player_bus.call(playerbus::PlayerBusAction::NextSong);
-                    }
-
-                    if i == 3 {
-                        let _ = self.discovery_store.discovery_radio(self.state.track.clone().unwrap().id.as_str());
-                        self.player_bus.call(playerbus::PlayerBusAction::NextSong);
-                    }
+                    draw_rectangle(
+                        buttons_start_position + ((i as f32) * (button_size + button_margin)), 
+                        button_y, 
+                        button_size, 
+                        button_size, 
+                        WHITE
+                    );
+                    button.action(self.state.clone());
                 }
             }
         }
 
         for (i, button) in self.buttons.buttons.iter().enumerate() {
-            if self.buttons.buttons[i].state() {
-                draw_rectangle(
-                    buttons_start_position + ((i as f32) * (button_size + button_margin)), 
-                    button_y, 
-                    button_size, 
-                    button_size, 
-                    WHITE
-                );            
-            }
-
             let button_center = get_text_center(button.label(self.state.clone()).as_str(), Some(&self.fonts.icons), button_size as u16, 1.0, 0.0);
             
             draw_text_ex(
@@ -353,13 +313,24 @@ impl Gui {
         }
     }
 
+    fn render_loading(&self) {
+        draw_text_ex("Loading...", 17.0, 41.0,  TextParams { font_size: 32, font: Some(&self.fonts.title), color: BLACK, ..Default::default() },);
+        draw_text_ex("Loading...", 16.0, 40.0,  TextParams { font_size: 32, font: Some(&self.fonts.title), color: WHITE, ..Default::default() },);
+    }
+
     fn render(&mut self) {
         clear_background(BLACK);
     
         self.render_covers();
-        if self.state.track.is_some() {
-            self.render_title(self.state.track.clone().unwrap());
-            self.render_progress(self.state.track.clone().unwrap());
+
+        match self.state.player.case {
+            PlayerStateCase::Loading => self.render_loading(),
+            _ => {
+                if self.state.track.is_some() {
+                    self.render_title(self.state.track.clone().unwrap());
+                    self.render_progress(self.state.track.clone().unwrap());
+                }
+            }
         }
 
         self.render_buttons();

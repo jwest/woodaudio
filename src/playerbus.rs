@@ -14,9 +14,6 @@ pub struct State {
 }
 
 impl State {
-    pub fn build_with_change_track(&self, track_state: TrackState) -> Self {
-        Self { player: self.player.clone(), track: Some(track_state) }
-    }
     pub fn build_with_change_player(&self, player_state: PlayerState) -> Self {
         Self { player: player_state, track: self.track.clone() }
     }
@@ -38,7 +35,7 @@ pub struct PlayerState {
 pub enum PlayerBusAction {
     PausePlay,
     NextSong,
-    None,
+    Waiting,
 }
 
 #[derive(Debug)]
@@ -155,7 +152,7 @@ impl PlayerBus {
                 info!("[PlayerBus] Action readed: {:?}", action);
                 action.clone()
             },
-            None => PlayerBusAction::None,
+            None => PlayerBusAction::Waiting,
         }
     }
 

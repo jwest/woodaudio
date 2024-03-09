@@ -131,23 +131,26 @@ impl Playlist {
     pub fn push_force(&self, tracks: Vec<Track>) {
         debug!("[Playlist] Force push tracks: {:?}", tracks);
         
-        let mut tracks: Vec<Track> = tracks;
+        let mut existing_tracks: Vec<Track> = vec![];
 
         loop {
             match self.receiver.try_recv() {
-                Ok(track) => tracks.push(track),
+                Ok(track) => existing_tracks.push(track),
                 Err(_) => break,
             }
         }
 
         loop {
             match self.buffered_receiver.try_recv() {
-                Ok(buffered_track) => tracks.push(buffered_track.track),
+                Ok(buffered_track) => existing_tracks.push(buffered_track.track),
                 Err(_) => break,
             }
         }
 
         tracks.iter()
-            .for_each(|t| { let _ = self.sender.send(t.clone()); });
+            .for_each(|track| { let _ = self.sender.send(track.clone()); });
+
+        existing_tracks.iter()
+            .for_each(|track| { let _ = self.sender.send(track.clone()); });
     }
 }

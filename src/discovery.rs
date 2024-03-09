@@ -1,12 +1,13 @@
 use std::error::Error;
 
-use log::info;
+use log::{debug, info};
 use rand::thread_rng;
 use rand::seq::SliceRandom;
 use serde_json::Value;
 
 use crate::{playlist::{Playlist, Track}, session::Session};
 
+#[derive(Debug)]
 enum DiscoverablePriority {
     Low,
     High,
@@ -28,7 +29,7 @@ impl DiscoveryQueue {
     fn push_tracks(&self, priority: DiscoverablePriority, tracks: Vec<Track>) {
         match priority {
             DiscoverablePriority::Low => self.playlist.push(tracks),
-            DiscoverablePriority::High => self.playlist.push(tracks),
+            DiscoverablePriority::High => self.playlist.push_force(tracks),
         }
     }
 }
@@ -113,7 +114,10 @@ impl DiscoveryStore  {
             }
         }
 
+        info!("[Discovery] Discover tracks: {:?}", tracks);
+
         self.queue.push_tracks(DiscoverablePriority::High, tracks);
+
         Ok(())
     }
 
@@ -133,7 +137,10 @@ impl DiscoveryStore  {
             }
         }
 
+        info!("[Discovery] Discover tracks {:?} from album: {}", tracks, album_id);
+
         self.queue.push_tracks(DiscoverablePriority::High, tracks);
+
         Ok(())
     }
 
@@ -148,6 +155,8 @@ impl DiscoveryStore  {
                 }
             }
         }
+
+        info!("[Discovery] Discover tracks {:?} from artist: {}", tracks, artist_id);
 
         self.queue.push_tracks(DiscoverablePriority::High, tracks);
         Ok(())
