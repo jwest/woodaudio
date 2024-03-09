@@ -4,6 +4,35 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use log::{debug, info};
 
+use crate::playlist::{BufferedTrack, Cover, Track};
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct State {
+    pub player: PlayerState,
+    pub track: Option<TrackState>,
+}
+
+impl State {
+    pub fn build_with_change_track(&self, track_state: TrackState) -> Self {
+        Self { player: self.player.clone(), track: Some(track_state) }
+    }
+    pub fn build_with_change_player(&self, player_state: PlayerState) -> Self {
+        Self { player: player_state, track: self.track.clone() }
+    }
+    pub fn publish(&self, player_bus: &PlayerBus) -> Self {
+        player_bus.set_state(self.clone());
+        self.clone()
+    }
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct PlayerState {
+    pub case: PlayerStateCase,
+    pub playing_time: Option<Instant>,
+}
+
 #[derive(Debug)]
 #[derive(Clone)]
 pub enum PlayerBusAction {
@@ -14,7 +43,7 @@ pub enum PlayerBusAction {
 
 #[derive(Debug)]
 #[derive(Clone)]
-pub enum PlayerState {
+pub enum PlayerStateCase {
     Playing,
     Paused,
     Loading,
@@ -22,16 +51,61 @@ pub enum PlayerState {
 
 #[derive(Debug)]
 #[derive(Clone)]
-pub struct PlayerTrackState {
-    pub player_state: PlayerState,
+pub struct TrackStateCover {
+    pub foreground: String,
+    pub background: String,
+}
+
+impl From<Cover> for TrackStateCover {
+    fn from(cover: Cover) -> Self {
+        Self { foreground: cover.foreground, background: cover.background }
+    }
+}
+
+impl From<Option<Cover>> for TrackStateCover {
+    fn from(cover: Option<Cover>) -> Self {
+        Self { 
+            foreground: cover.clone().map(|cover| cover.foreground).unwrap_or("../static/sample_cover.jpg-foreground.png".to_string()),
+            background: cover.clone().map(|cover| cover.background).unwrap_or("../static/sample_cover.jpg-background.png".to_string()),
+        }
+    }
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct TrackState {
     pub id: String,
     pub title: String,
     pub artist_name: String,
     pub album_name: String,
-    pub cover: Option<String>,
-    pub cover_background: Option<String>,
+    pub cover: Option<TrackStateCover>,
     pub duration: Duration,
-    pub playing_time: Instant,
+}
+
+impl From<BufferedTrack> for TrackState {
+    fn from(buffered_track: BufferedTrack) -> Self {
+        TrackState {
+            id: buffered_track.track.id,
+            title: buffered_track.track.title,
+            artist_name: buffered_track.track.artist_name,
+            album_name: buffered_track.track.album_name,
+            cover: buffered_track.cover.map(|c| Some(TrackStateCover::from(c))).unwrap_or_default(),
+            duration: buffered_track.track.duration,
+        }
+    }
+}
+
+impl From<Track> for TrackState {
+    fn from(track: Track) -> Self {
+        TrackState {
+            id: track.id,
+            title: track.title,
+            artist_name: track.artist_name,
+            album_name: track.album_name,
+            cover: None,
+            duration: track.duration,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -39,22 +113,18 @@ pub struct PlayerTrackState {
 pub struct PlayerBus {
     actions_sender: Sender<PlayerBusAction>, 
     actions_receiver: Receiver<PlayerBusAction>,
-    state_sender: Sender<PlayerTrackState>, 
-    state_receiver: Receiver<PlayerTrackState>,
+    state_sender: Sender<State>, 
+    state_receiver: Receiver<State>,
 }
 
-impl PlayerTrackState {
-    pub fn default_state() -> PlayerTrackState {
-        PlayerTrackState { 
-            player_state: PlayerState::Loading, 
-            id: "".to_string(), 
-            title: "".to_string(), 
-            artist_name: "".to_string(), 
-            album_name: "".to_string(), 
-            cover: None,
-            cover_background: None,
-            duration: Duration::ZERO, 
-            playing_time: Instant::now(),
+impl State {
+    pub fn default_state() -> State {
+        State {
+            player: PlayerState {
+                case: PlayerStateCase::Loading,
+                playing_time: None,
+            },
+            track: None,
         }
     }
 }
@@ -62,7 +132,7 @@ impl PlayerTrackState {
 impl PlayerBus {
     pub fn new() -> PlayerBus {
         let (actions_sender, actions_receiver): (Sender<PlayerBusAction>, Receiver<PlayerBusAction>) = unbounded();
-        let (state_sender, state_receiver): (Sender<PlayerTrackState>, Receiver<PlayerTrackState>) = unbounded();
+        let (state_sender, state_receiver): (Sender<State>, Receiver<State>) = unbounded();
 
         PlayerBus{
             actions_sender,
@@ -89,12 +159,12 @@ impl PlayerBus {
         }
     }
 
-    pub fn set_state(&self, state: PlayerTrackState) {
+    pub fn set_state(&self, state: State) {
         debug!("[PlayerBus] Set state: {:?}", state);
         let _ = self.state_sender.send(state);
     }
 
-    pub fn read_state(&self) -> Option<PlayerTrackState> {
+    pub fn read_state(&self) -> Option<State> {
         let states: Vec<_> = self.state_receiver.try_iter().collect();
         debug!("[PlayerBus] Read states: {:?}", states);
 

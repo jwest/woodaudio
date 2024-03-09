@@ -130,7 +130,7 @@ async fn main() {
 
     player_module(playlist.clone(), player_bus.clone());
 
-    let mut gui = Gui::default_state();
-
-    gui.gui_loop(player_bus.clone(), discovery_store.clone()).await;
+    Gui::init(player_bus.clone(), discovery_store.clone())
+        .gui_loop()
+        .await;
 }

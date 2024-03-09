@@ -2,7 +2,7 @@ use rodio::{OutputStream, Decoder, Sink};
 use std::{io::Cursor, thread, time::{Duration, Instant}};
 use log::error;
 
-use crate::{playerbus::{self, PlayerBus, PlayerBusAction, PlayerTrackState}, playlist::{BufferedTrack, Playlist}};
+use crate::{playerbus::{self, PlayerBus, PlayerBusAction, PlayerState, State, TrackState}, playlist::{BufferedTrack, Playlist}};
 
 fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
     match function() {
@@ -28,6 +28,8 @@ fn source(track: BufferedTrack) -> Option<Decoder<std::io::Cursor<bytes::Bytes>>
 }
 
 pub fn player(playlist: Playlist, player_bus: PlayerBus) {
+    let mut state = State::default_state();
+
     let (_stream, stream_handle) = retry(OutputStream::try_default);
     let sink = Sink::try_new(&stream_handle).unwrap();
     
@@ -38,8 +40,10 @@ pub fn player(playlist: Playlist, player_bus: PlayerBus) {
             PlayerBusAction::PausePlay => {
                 if sink.is_paused() {
                     sink.play();
+                    state = state.build_with_change_player(PlayerState { case: playerbus::PlayerStateCase::Playing, playing_time: state.player.playing_time }).publish(&player_bus);
                 } else {
                     sink.pause();
+                    state = state.build_with_change_player(PlayerState { case: playerbus::PlayerStateCase::Paused, playing_time: state.player.playing_time }).publish(&player_bus);
                 }
             },
             PlayerBusAction::NextSong => {
@@ -54,24 +58,21 @@ pub fn player(playlist: Playlist, player_bus: PlayerBus) {
                     Some(track) => {  
                         let source = source(track.clone());
                         if source.is_some() {
-                            let playing_track = track.track;
-                            player_bus.set_state(PlayerTrackState {
-                                player_state: playerbus::PlayerState::Playing,
-                                id: playing_track.id,
-                                title: playing_track.title,
-                                artist_name: playing_track.artist_name,
-                                album_name: playing_track.album_name,
-                                cover: track.cover.as_ref().map(|c| c.foreground.to_string()),
-                                cover_background: track.cover.as_ref().map(|c| c.background.to_string()),
-                                duration: playing_track.duration,
-                                playing_time: Instant::now(),
-                            });
+                            state = State {
+                                player: playerbus::PlayerState { case: playerbus::PlayerStateCase::Playing, playing_time: Some(Instant::now()) },
+                                track: Some(TrackState::from(track)),
+                            }.publish(&player_bus);
+
                             sink.append(source.unwrap());
                             sink.play();
                         }
                     }
                     None => {
-                        player_bus.set_state(PlayerTrackState::default_state());
+                        state = State {
+                            player: playerbus::PlayerState { case: playerbus::PlayerStateCase::Loading, playing_time: None },
+                            track: None,
+                        }.publish(&player_bus);
+
                         thread::sleep(Duration::from_millis(200));
                     }
                 }
