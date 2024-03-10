@@ -1,10 +1,16 @@
-use std::time::{Duration, Instant};
+use std::{process::Command, time::{Duration, Instant}};
 use macroquad::prelude::*;
 
 use crate::{discovery::DiscoveryStore, playerbus::{self, PlayerBus, PlayerStateCase, State, TrackState}, session::Session};
 
+enum Screen {
+    Player,
+    Actions,
+}
+
 pub struct Gui {
     player_bus: PlayerBus,
+    screen: Screen,
     state: State,
     buttons: Buttons,
     fonts: Fonts,
@@ -14,7 +20,7 @@ pub struct Gui {
 
 pub trait Button {
     fn label(&self, state: State) -> String;
-    fn action(&self, state: State);
+    fn action(&self, state: State) -> Screen;
 }
 
 struct PlayPauseButton {
@@ -38,8 +44,9 @@ impl Button for PlayPauseButton {
         }
     }
     
-    fn action(&self, _: State) {
-        self.player_bus.call(playerbus::PlayerBusAction::PausePlay)
+    fn action(&self, _: State) -> Screen {
+        self.player_bus.call(playerbus::PlayerBusAction::PausePlay);
+        Screen::Player
     }
 }
 
@@ -60,8 +67,9 @@ impl Button for NextButton {
         "".to_string()
     }
     
-    fn action(&self, _: State) {
-        self.player_bus.call(playerbus::PlayerBusAction::NextSong)
+    fn action(&self, _: State) -> Screen {
+        self.player_bus.call(playerbus::PlayerBusAction::NextSong);
+        Screen::Player
     }
 }
 
@@ -84,13 +92,14 @@ impl Button for TrackRadioButton {
         "".to_string()
     }
     
-    fn action(&self, state: State) {
+    fn action(&self, state: State) -> Screen {
         if state.track.is_none() {
-            return;
+            return Screen::Player;
         }
         self.player_bus.call(playerbus::PlayerBusAction::PausePlay);
         let _ = self.discovery_store.discovery_radio(&state.track.unwrap().id);
         self.player_bus.call(playerbus::PlayerBusAction::NextSong);
+        Screen::Player
     }
 }
 
@@ -111,11 +120,31 @@ impl Button for LikeButton {
         "".to_string()
     }
     
-    fn action(&self, state: State) {
+    fn action(&self, state: State) -> Screen {
         if state.track.is_none() {
-            return;
+            return Screen::Player;
         }
         let _ = self.session.add_track_to_favorites(&state.track.unwrap().id);
+        Screen::Player
+    }
+}
+
+struct ActionsButton {
+}
+
+impl ActionsButton {
+    fn new() -> Self {
+        Self {}
+    }
+}
+
+impl Button for ActionsButton {
+    fn label(&self, _: State) -> String { 
+        "".to_string()
+    }
+    
+    fn action(&self, _: State) -> Screen {
+        Screen::Actions
     }
 }
 
@@ -162,6 +191,7 @@ impl Gui {
             Box::new(NextButton::new(player_bus.clone())),
             Box::new(LikeButton::new(session.clone())),
             Box::new(TrackRadioButton::new(player_bus.clone(), discovery_store.clone())),
+            Box::new(ActionsButton::new()),
         ]);
 
         let fonts = Fonts {
@@ -175,7 +205,8 @@ impl Gui {
 
         Gui { 
             player_bus,
-            state, 
+            state,
+            screen: Screen::Player,
             buttons,
             fonts,
             cover_foreground,
@@ -307,7 +338,8 @@ impl Gui {
                         button_size, 
                         WHITE
                     );
-                    button.action(self.state.clone());
+                    let screen = button.action(self.state.clone());
+                    self.screen = screen;
                 }
             }
         }
@@ -347,19 +379,106 @@ impl Gui {
     fn render(&mut self) {
         clear_background(BLACK);
     
-        self.render_covers();
+        match self.screen {
+            Screen::Player => {
+                self.render_covers();
 
-        match self.state.player.case {
-            PlayerStateCase::Loading => self.render_loading(),
-            _ => {
-                if self.state.track.is_some() {
-                    self.render_title(self.state.track.clone().unwrap());
-                    self.render_progress(self.state.track.clone().unwrap());
+                match self.state.player.case {
+                    PlayerStateCase::Loading => self.render_loading(),
+                    _ => {
+                        if self.state.track.is_some() {
+                            self.render_title(self.state.track.clone().unwrap());
+                            self.render_progress(self.state.track.clone().unwrap());
+                        }
+                    }
                 }
-            }
-        }
+        
+                self.render_buttons();
+            },
+            Screen::Actions => {
+                let button_size = self.buttons.size;
 
-        self.render_buttons();
+                let actions = vec![("Test", "touch", ["/Users/jwest/projects/woodaudio/test", "test2"]), ("Reboot system", "sudo", ["reboot", "now"]), ("Shutdown system", "sudo", ["shutdown", "now"])];
+
+                for (i, button) in actions.iter().enumerate() {
+                    draw_rectangle(
+                        200.0,
+                        16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
+                        624.0, 
+                        48.0, 
+                        WHITE
+                    );
+                    draw_rectangle(
+                        201.0,
+                        1.0+16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
+                        622.0, 
+                        48.0-2.0, 
+                        BLACK
+                    );
+
+                    draw_text_ex(button.0, 200.0 + 16.0, 16.0 + ((i as f32) * button_size + (i as f32) * 16.0) + 32.0,  TextParams { font_size: 24, font: Some(&self.fonts.title), color: WHITE, ..Default::default() },);
+                }
+
+                if is_mouse_button_pressed(MouseButton::Left) {
+                    for (i, button) in actions.iter().enumerate() {
+                        let rectangle = Rect::new(
+                            200.0,
+                            16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
+                            624.0, 
+                            48.0,
+                        );
+                        let (mouse_x,mouse_y) = mouse_position();
+                        let rectangle_rect = Rect::new(mouse_x,mouse_y,1.0, 1.0);
+            
+                        if rectangle_rect.intersect(rectangle).is_some() {
+                            draw_rectangle(
+                                200.0,
+                                16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
+                                624.0, 
+                                48.0, 
+                                WHITE
+                            );
+                            let _ = Command::new(button.1).args(button.2).spawn();
+                        }
+                    }
+                }
+        
+                if is_mouse_button_pressed(MouseButton::Left) {
+                    let rectangle = Rect::new(
+                        16.0,
+                        16.0,
+                        button_size, 
+                        button_size, 
+                    );
+                    let (mouse_x,mouse_y) = mouse_position();
+                    let rectangle_rect = Rect::new(mouse_x,mouse_y,1.0, 1.0);
+        
+                    if rectangle_rect.intersect(rectangle).is_some() {
+                        draw_rectangle(
+                            16.0,
+                            16.0,
+                            button_size, 
+                            button_size, 
+                            WHITE
+                        );
+                        self.screen = Screen::Player;
+                    }
+                }
+
+                let button_center = get_text_center("", Some(&self.fonts.icons), button_size as u16, 1.0, 0.0);
+
+                draw_text_ex(
+                    "",
+                    16.0 + button_center.x,
+                    48.0 + 8.0,
+                    TextParams {
+                        font_size: button_size as u16,
+                        font: Some(&self.fonts.icons),
+                        ..Default::default()
+                    },
+                );
+            },
+        }
     }
 }
 

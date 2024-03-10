@@ -1,10 +1,9 @@
 use reqwest::blocking::{Client, Response};
 use reqwest::header;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use ini::Ini;
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::{time, thread};
 use log::info;
@@ -81,10 +80,6 @@ impl Session {
     fn build_client(&self) -> Client {
         let mut headers = header::HeaderMap::new();
         headers.insert(header::AUTHORIZATION, header::HeaderValue::from_str(self.token.as_str()).unwrap());
-        // headers.insert(header::CONTENT_TYPE, header::HeaderValue::from_str("application/json").unwrap());
-
-        // let user_agent = "Mozilla/5.0 (Linux; Android 12; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Safari/537.36";
-        // headers.insert(header::USER_AGENT, header::HeaderValue::from_str(user_agent).unwrap());
 
         reqwest::blocking::Client::builder()
             .default_headers(headers)
