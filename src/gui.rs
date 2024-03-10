@@ -1,16 +1,146 @@
-use std::{process::Command, time::{Duration, Instant}};
+use std::{fmt::Display, fs, process::Command, time::{Duration, Instant}};
 use macroquad::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{discovery::DiscoveryStore, playerbus::{self, PlayerBus, PlayerStateCase, State, TrackState}, session::Session};
 
-enum Screen {
+#[derive(PartialEq)]
+pub enum Screen {
     Player,
     Actions,
+}
+
+trait ScreenRender {
+    fn name(&self) -> Screen;
+    fn render(&self, gui: &Gui) -> Screen;
+}
+
+#[derive(Serialize, Deserialize)]
+struct ActionCommand {
+    program: String,
+    args: Vec<String>,
+}
+
+impl Display for ActionCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Program: {}, args: {:?}", self.program, self.args)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Action {
+    label: String,
+    command: ActionCommand,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Actions {
+    actions: Vec<Action>
+}
+
+impl Actions {
+    fn init(config_path: String) -> Self {
+        let config_raw = fs::read_to_string(config_path).expect("Couldn't find or load actions config file.");
+        serde_json::from_str(config_raw.as_str()).expect("Error on deserialize actions config file")
+    }
+}
+
+impl ScreenRender for Actions {
+    fn name(&self) -> Screen {
+        Screen::Actions
+    }
+    fn render(&self, gui: &Gui) -> Screen {
+        let button_size = 48.0;
+
+        for (i, action) in self.actions.iter().enumerate() {
+            draw_rectangle(
+                200.0,
+                16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
+                624.0, 
+                48.0, 
+                WHITE
+            );
+            draw_rectangle(
+                201.0,
+                1.0+16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
+                622.0, 
+                48.0-2.0, 
+                BLACK
+            );
+
+            draw_text_ex(&action.label, 200.0 + 16.0, 16.0 + ((i as f32) * button_size + (i as f32) * 16.0) + 32.0,  TextParams { font_size: 24, font: Some(&gui.fonts.title), color: WHITE, ..Default::default() },);
+        }
+
+        if is_mouse_button_pressed(MouseButton::Left) {
+            for (i, action) in self.actions.iter().enumerate() {
+                let rectangle = Rect::new(
+                    200.0,
+                    16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
+                    624.0, 
+                    48.0,
+                );
+                let (mouse_x,mouse_y) = mouse_position();
+                let rectangle_rect = Rect::new(mouse_x,mouse_y,1.0, 1.0);
+    
+                if rectangle_rect.intersect(rectangle).is_some() {
+                    draw_rectangle(
+                        200.0,
+                        16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
+                        624.0, 
+                        48.0, 
+                        WHITE
+                    );
+                    match Command::new(action.command.program.as_str()).args(action.command.args.as_slice()).spawn() {
+                        Ok(_) => info!("[Actions] Command {} executed with sucess", action.command),
+                        Err(err) => error!("[Actions] Command {} executed with errors: {:?}", action.command, err),
+                    }
+                }
+            }
+        }
+
+        if is_mouse_button_pressed(MouseButton::Left) {
+            let rectangle = Rect::new(
+                16.0,
+                16.0,
+                button_size, 
+                button_size, 
+            );
+            let (mouse_x,mouse_y) = mouse_position();
+            let rectangle_rect = Rect::new(mouse_x,mouse_y,1.0, 1.0);
+
+            if rectangle_rect.intersect(rectangle).is_some() {
+                draw_rectangle(
+                    16.0,
+                    16.0,
+                    button_size, 
+                    button_size, 
+                    WHITE
+                );
+                return Screen::Player;
+            }
+        }
+
+        let button_center = get_text_center("", Some(&gui.fonts.icons), button_size as u16, 1.0, 0.0);
+
+        draw_text_ex(
+            "",
+            16.0 + button_center.x,
+            48.0 + 8.0,
+            TextParams {
+                font_size: button_size as u16,
+                font: Some(&gui.fonts.icons),
+                ..Default::default()
+            },
+        );
+
+        Screen::Actions
+    }
 }
 
 pub struct Gui {
     player_bus: PlayerBus,
     screen: Screen,
+    screens: Vec<Box<dyn ScreenRender>>,
     state: State,
     buttons: Buttons,
     fonts: Fonts,
@@ -207,6 +337,9 @@ impl Gui {
             player_bus,
             state,
             screen: Screen::Player,
+            screens: vec![
+                Box::new(Actions::init(home::home_dir().unwrap().join("actions.json").to_str().unwrap().to_string())),
+            ],
             buttons,
             fonts,
             cover_foreground,
@@ -238,7 +371,7 @@ impl Gui {
         loop {
             self.update_state().await;
             
-            self.render();
+            self.render_screen();
     
             next_frame().await;
 
@@ -267,7 +400,7 @@ impl Gui {
     }
 
     fn render_progress(&mut self, track: TrackState) {
-        let time_duration_actual = Instant::now() - self.state.player.playing_time.unwrap();
+        let time_duration_actual = self.state.player.playing_time.unwrap();
         let seconds = time_duration_actual.as_secs() % 60;
         let minutes = (time_duration_actual.as_secs() / 60) % 60;
         let time_text_actual = format!("{}:{:0>2}", minutes, seconds);
@@ -376,7 +509,7 @@ impl Gui {
         draw_text_ex("Loading...", 16.0, 40.0,  TextParams { font_size: 32, font: Some(&self.fonts.title), color: WHITE, ..Default::default() },);
     }
 
-    fn render(&mut self) {
+    fn render_screen(&mut self) {
         clear_background(BLACK);
     
         match self.screen {
@@ -392,93 +525,12 @@ impl Gui {
                         }
                     }
                 }
-        
+
                 self.render_buttons();
             },
             Screen::Actions => {
-                let button_size = self.buttons.size;
-
-                let actions = vec![("Test", "touch", ["/Users/jwest/projects/woodaudio/test", "test2"]), ("Reboot system", "sudo", ["reboot", "now"]), ("Shutdown system", "sudo", ["shutdown", "now"])];
-
-                for (i, button) in actions.iter().enumerate() {
-                    draw_rectangle(
-                        200.0,
-                        16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
-                        624.0, 
-                        48.0, 
-                        WHITE
-                    );
-                    draw_rectangle(
-                        201.0,
-                        1.0+16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
-                        622.0, 
-                        48.0-2.0, 
-                        BLACK
-                    );
-
-                    draw_text_ex(button.0, 200.0 + 16.0, 16.0 + ((i as f32) * button_size + (i as f32) * 16.0) + 32.0,  TextParams { font_size: 24, font: Some(&self.fonts.title), color: WHITE, ..Default::default() },);
-                }
-
-                if is_mouse_button_pressed(MouseButton::Left) {
-                    for (i, button) in actions.iter().enumerate() {
-                        let rectangle = Rect::new(
-                            200.0,
-                            16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
-                            624.0, 
-                            48.0,
-                        );
-                        let (mouse_x,mouse_y) = mouse_position();
-                        let rectangle_rect = Rect::new(mouse_x,mouse_y,1.0, 1.0);
-            
-                        if rectangle_rect.intersect(rectangle).is_some() {
-                            draw_rectangle(
-                                200.0,
-                                16.0 + ((i as f32) * button_size + (i as f32) * 16.0),
-                                624.0, 
-                                48.0, 
-                                WHITE
-                            );
-                            let _ = Command::new(button.1).args(button.2).spawn();
-                        }
-                    }
-                }
-        
-                if is_mouse_button_pressed(MouseButton::Left) {
-                    let rectangle = Rect::new(
-                        16.0,
-                        16.0,
-                        button_size, 
-                        button_size, 
-                    );
-                    let (mouse_x,mouse_y) = mouse_position();
-                    let rectangle_rect = Rect::new(mouse_x,mouse_y,1.0, 1.0);
-        
-                    if rectangle_rect.intersect(rectangle).is_some() {
-                        draw_rectangle(
-                            16.0,
-                            16.0,
-                            button_size, 
-                            button_size, 
-                            WHITE
-                        );
-                        self.screen = Screen::Player;
-                    }
-                }
-
-                let button_center = get_text_center("", Some(&self.fonts.icons), button_size as u16, 1.0, 0.0);
-
-                draw_text_ex(
-                    "",
-                    16.0 + button_center.x,
-                    48.0 + 8.0,
-                    TextParams {
-                        font_size: button_size as u16,
-                        font: Some(&self.fonts.icons),
-                        ..Default::default()
-                    },
-                );
+                self.screen = self.screens[0].render(&self);
             },
         }
     }
 }
-

@@ -1,6 +1,8 @@
 use env_logger::Target;
 use gui::Gui;
+use log::info;
 use macroquad::window::Conf;
+use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::thread;
 
 mod playerbus;
@@ -39,15 +41,19 @@ fn downloader_module(session: Session, playlist: Playlist) {
 }
 
 fn server_module(discovery_store: DiscoveryStore, player_bus: PlayerBus) {
-    thread::spawn(move || {
-        http::server(discovery_store, player_bus);
-    });
+    thread::Builder::new()
+        .name("Server module".to_owned())
+        .spawn_with_priority(ThreadPriority::Min, |result| {
+            http::server(discovery_store, player_bus);
+    }).unwrap();
 }
 
 fn player_module(playlist: Playlist, player_bus: PlayerBus) {
-    thread::spawn(move || {
-        let _ = player::player(playlist, player_bus);
-    });
+    thread::Builder::new()
+        .name("Player module".to_owned())
+        .spawn_with_priority(ThreadPriority::Max, |result| {
+            let _ = player::player(playlist, player_bus);
+    }).unwrap();
 }
 
 fn conf() -> Conf {

@@ -27,7 +27,7 @@ impl State {
 #[derive(Clone)]
 pub struct PlayerState {
     pub case: PlayerStateCase,
-    pub playing_time: Option<Instant>,
+    pub playing_time: Option<Duration>,
 }
 
 #[derive(Debug)]

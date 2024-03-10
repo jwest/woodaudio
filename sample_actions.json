@@ -1,0 +1,25 @@
+{
+    "actions": [
+        {
+            "label": "Test",
+            "command": {
+                "program": "touch",
+                "args": ["/Users/jwest/projects/woodaudio/test"]
+            }
+        },
+        {
+            "label": "Reboot system",
+            "command": {
+                "program": "sudo",
+                "args": ["reboot", "now"]
+            }
+        },
+        {
+            "label": "Shutdown system",
+            "command": {
+                "program": "sudo",
+                "args": ["shutdown", "now"]
+            }
+        }
+    ]
+}
