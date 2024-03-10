@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 use macroquad::prelude::*;
 
-use crate::{discovery::DiscoveryStore, playerbus::{self, PlayerBus, PlayerStateCase, State, TrackState}};
+use crate::{discovery::DiscoveryStore, playerbus::{self, PlayerBus, PlayerStateCase, State, TrackState}, session::Session};
 
 pub struct Gui {
     player_bus: PlayerBus,
@@ -94,6 +94,31 @@ impl Button for TrackRadioButton {
     }
 }
 
+struct LikeButton {
+    session: Session,
+}
+
+impl LikeButton {
+    fn new(session: Session) -> Self {
+        Self {
+            session,
+        }
+    }
+}
+
+impl Button for LikeButton {
+    fn label(&self, _: State) -> String { 
+        "".to_string()
+    }
+    
+    fn action(&self, state: State) {
+        if state.track.is_none() {
+            return;
+        }
+        let _ = self.session.add_track_to_favorites(&state.track.unwrap().id);
+    }
+}
+
 pub struct Buttons {
     buttons: Vec<Box<dyn Button>>,
     size: f32,
@@ -129,12 +154,13 @@ pub struct Fonts{
 }
 
 impl Gui {
-    pub fn init(player_bus: PlayerBus, discovery_store: DiscoveryStore) -> Gui {
+    pub fn init(session: Session, player_bus: PlayerBus, discovery_store: DiscoveryStore) -> Gui {
         let state = State::default_state();
 
         let buttons = Buttons::init(vec![
             Box::new(PlayPauseButton::new(player_bus.clone())),
             Box::new(NextButton::new(player_bus.clone())),
+            Box::new(LikeButton::new(session.clone())),
             Box::new(TrackRadioButton::new(player_bus.clone(), discovery_store.clone())),
         ]);
 

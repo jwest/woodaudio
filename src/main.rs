@@ -77,7 +77,7 @@ async fn main() {
     downloader_module(session.clone(), playlist.clone());
     player_module(playlist.clone(), player_bus.clone());
 
-    Gui::init(player_bus.clone(), discovery_store.clone())
+    Gui::init(session.clone(), player_bus.clone(), discovery_store.clone())
         .gui_loop()
         .await;
 }

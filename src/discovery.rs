@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use log::{debug, info};
+use log::info;
 use rand::thread_rng;
 use rand::seq::SliceRandom;
 use serde_json::Value;
@@ -88,14 +88,17 @@ impl DiscoveryStore  {
         let v = self.session.get_page_for_you()?;
         let mixes = parse_modules(v)?;
 
-        shuffle_vec(mixes).iter()
-            .filter(|mix| mix["mixType"].is_string())
-            .map(|mix| self.session.get_mix(mix["id"].as_str().unwrap()).unwrap())
-            .map(|mix| parse_modules(mix).unwrap())
-            .flat_map(|mix_tracks| shuffle_vec(mix_tracks.clone()))
-            .filter(|mix_track| mix_track["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready))
+        shuffle_vec(
+            shuffle_vec(mixes).iter()
+                .filter(|mix| mix["mixType"].is_string())
+                .map(|mix| self.session.get_mix(mix["id"].as_str().unwrap()).unwrap())
+                .map(|mix| parse_modules(mix).unwrap())
+                .flat_map(|mix_tracks| shuffle_vec(mix_tracks.clone()))
+                .filter(|mix_track| mix_track["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready))
+                .collect()
+        ).iter()
             .for_each(|track| {
-                self.queue.push(DiscoverablePriority::Low, Track::build_from_json(track));
+                self.queue.push(DiscoverablePriority::Low, Track::build_from_json(track.clone()));
             });
 
         Ok(())
