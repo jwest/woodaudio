@@ -2,7 +2,7 @@ use rodio::{OutputStream, Decoder, Sink};
 use std::{io::Cursor, thread, time::{Duration, Instant}};
 use log::{debug, error, info};
 
-use crate::{playerbus::{self, PlayerBus, PlayerBusAction, PlayerState, State, TrackState}, playlist::{BufferedTrack, Playlist}};
+use crate::{playerbus::{Command, Message, PlayerBus}, playlist::{BufferedTrack, Playlist}};
 
 fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
     match function() {
@@ -28,8 +28,6 @@ fn source(track: BufferedTrack) -> Option<Decoder<std::io::Cursor<bytes::Bytes>>
 }
 
 pub fn player(playlist: Playlist, player_bus: PlayerBus) {
-    let mut state = State::default_state();
-
     let (_stream, stream_handle) = retry(OutputStream::try_default);
     let sink = Sink::try_new(&stream_handle).unwrap();
     
@@ -46,48 +44,48 @@ pub fn player(playlist: Playlist, player_bus: PlayerBus) {
                         let source = source(track.clone());
                         if source.is_some() {
                             playing_time = Some(Duration::ZERO);
-                            state = State {
-                                player: playerbus::PlayerState { case: playerbus::PlayerStateCase::Playing, playing_time },
-                                track: Some(TrackState::from(track)),
-                            }.publish(&player_bus);
-
+                            player_bus.publish_message(Message::PlayerPlayingNewTrack(track));
+                            
                             sink.append(source.unwrap());
                             sink.play();
                         }
                     }
                     None => {
                         playing_time = None;
-                        state = State {
-                            player: playerbus::PlayerState { case: playerbus::PlayerStateCase::Loading, playing_time },
-                            track: None,
-                        }.publish(&player_bus);
-
+                        player_bus.publish_message(Message::PlayerQueueIsEmpty);
+                        
                         thread::sleep(Duration::from_millis(200));
                     }
                 }
             },
             false => {
-                match player_bus.read() {
-                    PlayerBusAction::PausePlay => {
-                        if sink.is_paused() {
-                            sink.play();
-                            state = state.build_with_change_player(PlayerState { case: playerbus::PlayerStateCase::Playing, playing_time }).publish(&player_bus);
-                        } else {
-                            sink.pause();
-                            state = state.build_with_change_player(PlayerState { case: playerbus::PlayerStateCase::Paused, playing_time }).publish(&player_bus);
-                        }
+                match player_bus.read_command() {
+                    Some(Command::Play) => {
+                        sink.play();
+                        player_bus.publish_message(Message::PlayerPlaying);
                     },
-                    PlayerBusAction::NextSong => {
+                    Some(Command::Pause) => {
+                        sink.pause();
+                        player_bus.publish_message(Message::PlayerToPause);
+                    },
+                    Some(Command::Next) => {
                         sink.clear();
                     },
-                    _ => {},
+                    Some(Command::Like(track)) => {
+                        todo!()
+                    },
+                    Some(Command::Radio(track)) => {
+                        todo!()
+                    },
+                    None => {},
+                    
                 };
 
                 thread::sleep(Duration::from_millis(50));
 
                 if !sink.is_paused() {
                     debug!("[Player] playing time: {:?}, ({:?})", playing_time, last_iteration_datetime);
-                    state = state.build_with_change_player(PlayerState { case: playerbus::PlayerStateCase::Playing, playing_time }).publish(&player_bus);
+                    player_bus.publish_message(Message::PlayerElapsed(playing_time.unwrap_or(Duration::ZERO)));
                     playing_time = Some(playing_time.unwrap_or(Duration::ZERO) + (Instant::now() - last_iteration_datetime));
                 }
             },

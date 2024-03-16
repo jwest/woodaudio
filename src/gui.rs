@@ -1,8 +1,8 @@
-use std::{fmt::Display, fs, process::Command, time::{Duration, Instant}};
+use std::{fmt::Display, fs, process::Command, time::Duration};
 use macroquad::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{discovery::DiscoveryStore, playerbus::{self, PlayerBus, PlayerStateCase, State, TrackState}, session::Session};
+use crate::playerbus::{Message, PlayerBus, PlayerStateCase, State, TrackState};
 
 #[derive(PartialEq)]
 pub enum Screen {
@@ -144,7 +144,9 @@ pub struct Gui {
     state: State,
     buttons: Buttons,
     fonts: Fonts,
+    cover_foreground_path: String,
     cover_foreground: Texture2D,
+    cover_background_path: String,
     cover_background: Texture2D,
 }
 
@@ -170,12 +172,17 @@ impl Button for PlayPauseButton {
         match state.player.case {
             PlayerStateCase::Playing => "".to_string(),
             PlayerStateCase::Paused => "".to_string(),
-            PlayerStateCase::Loading => "".to_string(),
+            _ => "".to_string(),
         }
     }
     
-    fn action(&self, _: State) -> Screen {
-        self.player_bus.call(playerbus::PlayerBusAction::PausePlay);
+    fn action(&self, state: State) -> Screen {
+        match state.player.case {
+            PlayerStateCase::Playing => self.player_bus.publish_message(Message::UserPause),
+            PlayerStateCase::Paused => self.player_bus.publish_message(Message::UserPlay),
+            _ => {},
+        }
+        
         Screen::Player
     }
 }
@@ -198,21 +205,19 @@ impl Button for NextButton {
     }
     
     fn action(&self, _: State) -> Screen {
-        self.player_bus.call(playerbus::PlayerBusAction::NextSong);
+        self.player_bus.publish_message(Message::UserPlayNext);
         Screen::Player
     }
 }
 
 struct TrackRadioButton {
     player_bus: PlayerBus,
-    discovery_store: DiscoveryStore,
 }
 
 impl TrackRadioButton {
-    fn new(player_bus: PlayerBus, discovery_store: DiscoveryStore) -> Self {
+    fn new(player_bus: PlayerBus) -> Self {
         Self {
             player_bus,
-            discovery_store,
         }
     }
 }
@@ -226,21 +231,20 @@ impl Button for TrackRadioButton {
         if state.track.is_none() {
             return Screen::Player;
         }
-        self.player_bus.call(playerbus::PlayerBusAction::PausePlay);
-        let _ = self.discovery_store.discovery_radio(&state.track.unwrap().id);
-        self.player_bus.call(playerbus::PlayerBusAction::NextSong);
+        self.player_bus.publish_message(Message::UserLoadRadio(state.track.unwrap().id));
+        // let _ = self.discovery_store.discovery_radio(&state.track.unwrap().id);
         Screen::Player
     }
 }
 
 struct LikeButton {
-    session: Session,
+    player_bus: PlayerBus,
 }
 
 impl LikeButton {
-    fn new(session: Session) -> Self {
+    fn new(player_bus: PlayerBus) -> Self {
         Self {
-            session,
+            player_bus,
         }
     }
 }
@@ -254,7 +258,8 @@ impl Button for LikeButton {
         if state.track.is_none() {
             return Screen::Player;
         }
-        let _ = self.session.add_track_to_favorites(&state.track.unwrap().id);
+        self.player_bus.publish_message(Message::UserLike(state.track.unwrap().id));
+        // let _ = self.session.add_track_to_favorites(&state.track.unwrap().id);
         Screen::Player
     }
 }
@@ -313,14 +318,14 @@ pub struct Fonts{
 }
 
 impl Gui {
-    pub fn init(session: Session, player_bus: PlayerBus, discovery_store: DiscoveryStore) -> Gui {
+    pub fn init(player_bus: PlayerBus) -> Gui {
         let state = State::default_state();
 
         let buttons = Buttons::init(vec![
             Box::new(PlayPauseButton::new(player_bus.clone())),
             Box::new(NextButton::new(player_bus.clone())),
-            Box::new(LikeButton::new(session.clone())),
-            Box::new(TrackRadioButton::new(player_bus.clone(), discovery_store.clone())),
+            Box::new(LikeButton::new(player_bus.clone())),
+            Box::new(TrackRadioButton::new(player_bus.clone())),
             Box::new(ActionsButton::new()),
         ]);
 
@@ -330,7 +335,9 @@ impl Gui {
             icons: load_ttf_font_from_bytes(include_bytes!("../static/fontello.ttf")).unwrap(),
         };
 
+        let cover_foreground_path = "../static/sample_cover.jpg-foreground.png".to_string();
         let cover_foreground: Texture2D = Texture2D::from_file_with_format(include_bytes!("../static/sample_cover.jpg-foreground.png"), Some(ImageFormat::Png));
+        let cover_background_path = "../static/sample_cover.jpg-background.png".to_string();
         let cover_background: Texture2D = Texture2D::from_file_with_format(include_bytes!("../static/sample_cover.jpg-background.png"), Some(ImageFormat::Png));
 
         Gui { 
@@ -342,7 +349,9 @@ impl Gui {
             ],
             buttons,
             fonts,
+            cover_foreground_path,
             cover_foreground,
+            cover_background_path,
             cover_background,
         }
     }
@@ -355,13 +364,15 @@ impl Gui {
 
     async fn update_state(&mut self) {
         let new_state = self.player_bus.read_state();
-        if new_state.is_some() {
-            self.state = new_state.unwrap();
-            if self.state.track.is_some() {
-                let track = self.state.track.clone().unwrap();
-                if track.cover.is_some() {
-                    self.cover_foreground = load_texture(track.cover.clone().unwrap().foreground.clone().as_str()).await.unwrap();
-                    self.cover_background = load_texture(track.cover.clone().unwrap().background.clone().as_str()).await.unwrap();
+        self.state = new_state;
+        if self.state.track.is_some() {
+            let track = self.state.track.clone().unwrap();
+            if track.cover.is_some() {
+                if !track.cover.clone().unwrap().foreground.eq(self.cover_foreground_path.as_str()) {
+                    self.cover_foreground_path = track.cover.clone().unwrap().foreground.clone();
+                    self.cover_foreground = load_texture(self.cover_foreground_path.as_str()).await.unwrap();
+                    self.cover_background_path = track.cover.clone().unwrap().background.clone();
+                    self.cover_background = load_texture(self.cover_background_path.as_str()).await.unwrap();
                 }
             }
         }

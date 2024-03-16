@@ -5,8 +5,10 @@ use serde_json::Value;
 use ini::Ini;
 
 use std::error::Error;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use std::{time, thread};
-use log::info;
+use log::{error, info};
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -34,10 +36,73 @@ struct ResponseMedia {
     urls: Vec<String>,
 }
 
+#[derive(Debug)]
+#[derive(Clone)]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceAuthorization {
+    verification_uri_complete: String,
+    device_code: String,
+    expiresIn: u16,
+    interval: u16,
+}
+
+impl DeviceAuthorization {
+    pub fn format_url(&self) -> String {
+        format!("https://{}", self.verification_uri_complete)
+    }
+    pub fn wait_for_link(&self, config_path: PathBuf) -> Result<Session, Box<dyn Error>> {
+        let client_id = "zU4XHVVkc2tDPo4t";
+        let client_secret = "VJKhDFqJPqvsPVNBV6ukXTJmwlvbttP7wlMlrc72se4%3D";
+        let client = reqwest::blocking::Client::builder().build()?;
+
+        for _ in 0..15 {
+            thread::sleep(Duration::from_secs(2));
+
+            let params = &[
+                ("client_id", client_id),
+                ("client_secret", client_secret),
+                ("device_code", &self.device_code),
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+                ("scope", "r_usr w_usr w_sub"),
+            ];
+            
+            let res = client.post("https://auth.tidal.com:443/v1/oauth2/token")
+                .form(params)
+                .send()?;
+
+            info!("[Session] token resposne: {:?}", res.status());
+
+            if res.status().is_success() {
+                let session_response = res.json::<ResponseSession>()?;
+                let mut conf = Ini::new();
+
+                conf.with_section(Some("Tidal"))
+                    .set("token_type", session_response.token_type)
+                    .set("access_token", session_response.access_token)
+                    .set("refresh_token", session_response.refresh_token);
+                
+                conf.write_to_file(config_path.clone())?;
+
+                return Session::try_from_file(config_path)
+            }
+        }
+
+        panic!("[Session] login with link timeout");
+    }
+}
+
+#[derive(Debug)]
+#[derive(Deserialize)]
+struct ResponseSession {
+    access_token: String,
+    refresh_token: String,
+    token_type: String,
+}
+
 impl Session {
-    pub fn init_from_config_file() -> Result<Session, Box<dyn Error>> {
-        let config_path = home::home_dir().unwrap().join("config.ini");
-        let conf = Ini::load_from_file(config_path).unwrap();
+    pub fn try_from_file(config_path: PathBuf) -> Result<Session, Box<dyn Error>> {
+        let conf = Ini::load_from_file(config_path)?;
 
         let tidal_section = conf.section(Some("Tidal")).unwrap();
         let token_type = tidal_section.get("token_type").unwrap();
@@ -45,9 +110,20 @@ impl Session {
 
         Session::init(format!("{} {}", token_type, access_token))
     }
-    pub fn init(token: String) -> Result<Session, Box<dyn Error>> {
-        Session::wait_for_internet_connection();
+    pub fn login_link() -> Result<DeviceAuthorization, Box<dyn Error>> {
+        let client_id = "zU4XHVVkc2tDPo4t";
+        let client = reqwest::blocking::Client::builder()
+            .build()?;
+        let res = client.post("https://auth.tidal.com:443/v1/oauth2/device_authorization")
+            .form(&[("client_id", client_id), ("scope", "r_usr+w_usr+w_sub")])
+            .send()?;
 
+        let device_auth_response = res.json::<DeviceAuthorization>()?;
+        info!("[Session] login link: {}, waiting...", device_auth_response.format_url());
+
+        Ok(device_auth_response)
+    }
+    pub fn init(token: String) -> Result<Session, Box<dyn Error>> {
         let mut headers = header::HeaderMap::new();
         headers.insert(header::AUTHORIZATION, header::HeaderValue::from_str(token.as_str()).unwrap());
     
@@ -56,26 +132,30 @@ impl Session {
             .build()?;
         let res = client.get("https://api.tidal.com/v1/sessions").send()?;
 
-        let session = res.json::<ResponseTidalSession>()?;
-    
-        info!("[Session] {:?}", session);
-    
-        Ok(Session { 
-            session_id: session.session_id, 
-            country_code: session.country_code, 
-            user_id: session.user_id, 
-            token: token.clone(),
-            api_path: "https://api.tidal.com/v1".to_string(),
-        })
-    }
-    fn wait_for_internet_connection() {
-        loop {
-            info!("Wait for internet connection to tidal... ");
-            let res = reqwest::blocking::Client::default().get("https://api.tidal.com/").send();
-            if res.is_ok() {
-                break;
-            }
+        if res.status().is_success() {
+            let session = res.json::<ResponseTidalSession>()?;
+        
+            info!("[Session] {:?}", session);
+        
+            return Ok(Session { 
+                session_id: session.session_id, 
+                country_code: session.country_code, 
+                user_id: session.user_id, 
+                token: token.clone(),
+                api_path: "https://api.tidal.com/v1".to_string(),
+            });
         }
+
+        if res.status().is_client_error() {
+            info!("[Session] outdated, refresh needed");
+        }
+
+        panic!("Invalid session")
+    }
+    pub fn check_internet_connection() -> bool {
+        info!("Wait for internet connection to tidal... ");
+        let res = reqwest::blocking::Client::default().get("https://api.tidal.com/").send();
+        res.is_ok()
     }
     fn build_client(&self) -> Client {
         let mut headers = header::HeaderMap::new();

@@ -1,6 +1,5 @@
 use env_logger::Target;
 use gui::Gui;
-use log::info;
 use macroquad::window::Conf;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::thread;
@@ -13,6 +12,9 @@ use playlist::Playlist;
 
 mod session;
 use session::Session;
+
+mod sessiongui;
+use sessiongui::SessionGui;
 
 mod discovery;
 use discovery::DiscoveryStore;
@@ -33,7 +35,7 @@ fn downloader_module(session: Session, playlist: Playlist) {
     thread::spawn(move || {
         playlist.buffer_worker(|track| {
             match downloader::download_file(track, &session) {
-                Ok(buffered_track) => return buffered_track,
+                Ok(buffered_track) => buffered_track,
                 Err(err) => panic!("{:?}", err),
             }
         });
@@ -43,7 +45,7 @@ fn downloader_module(session: Session, playlist: Playlist) {
 fn server_module(discovery_store: DiscoveryStore, player_bus: PlayerBus) {
     thread::Builder::new()
         .name("Server module".to_owned())
-        .spawn_with_priority(ThreadPriority::Min, |result| {
+        .spawn_with_priority(ThreadPriority::Min, |_| {
             http::server(discovery_store, player_bus);
     }).unwrap();
 }
@@ -51,7 +53,7 @@ fn server_module(discovery_store: DiscoveryStore, player_bus: PlayerBus) {
 fn player_module(playlist: Playlist, player_bus: PlayerBus) {
     thread::Builder::new()
         .name("Player module".to_owned())
-        .spawn_with_priority(ThreadPriority::Max, |result| {
+        .spawn_with_priority(ThreadPriority::Max, |_| {
             let _ = player::player(playlist, player_bus);
     }).unwrap();
 }
@@ -73,9 +75,11 @@ async fn main() {
         .filter_level(log::LevelFilter::Info)
         .init();
 
+    let config_path = home::home_dir().unwrap().join("config.ini");
+    let session = SessionGui::init(config_path).gui_loop().await;
+
     let playlist = Playlist::new();
     let player_bus = PlayerBus::new();
-    let session = Session::init_from_config_file().unwrap();
     let discovery_store = DiscoveryStore::new(session.clone(), playlist.clone());
     
     discovery_module(discovery_store.clone());
@@ -83,7 +87,7 @@ async fn main() {
     downloader_module(session.clone(), playlist.clone());
     player_module(playlist.clone(), player_bus.clone());
 
-    Gui::init(session.clone(), player_bus.clone(), discovery_store.clone())
+    Gui::init(player_bus.clone())
         .gui_loop()
         .await;
 }

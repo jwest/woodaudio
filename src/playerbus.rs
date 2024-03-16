@@ -1,10 +1,37 @@
-use std::time::{Duration, Instant};
+use std::{sync::{Arc, Mutex}, time::Duration};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use log::{debug, info};
 
 use crate::playlist::{BufferedTrack, Cover, Track};
+
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub enum Command {
+    Play,
+    Pause,
+    Next,
+    Like(String),
+    Radio(String),
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub enum Message {
+    PlayerPlayingNewTrack(BufferedTrack),
+    PlayerPlaying,
+    PlayerToPause,
+    PlayerElapsed(Duration),
+    PlayerQueueIsEmpty,
+
+    UserPlay,
+    UserPause,
+    UserPlayNext,
+    UserLike(String),
+    UserLoadRadio(String),
+}
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -13,29 +40,11 @@ pub struct State {
     pub track: Option<TrackState>,
 }
 
-impl State {
-    pub fn build_with_change_player(&self, player_state: PlayerState) -> Self {
-        Self { player: player_state, track: self.track.clone() }
-    }
-    pub fn publish(&self, player_bus: &PlayerBus) -> Self {
-        player_bus.set_state(self.clone());
-        self.clone()
-    }
-}
-
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct PlayerState {
     pub case: PlayerStateCase,
     pub playing_time: Option<Duration>,
-}
-
-#[derive(Debug)]
-#[derive(Clone)]
-pub enum PlayerBusAction {
-    PausePlay,
-    NextSong,
-    Waiting,
 }
 
 #[derive(Debug)]
@@ -108,10 +117,9 @@ impl From<Track> for TrackState {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct PlayerBus {
-    actions_sender: Sender<PlayerBusAction>, 
-    actions_receiver: Receiver<PlayerBusAction>,
-    state_sender: Sender<State>, 
-    state_receiver: Receiver<State>,
+    message_sender: Sender<Command>, 
+    message_receiver: Receiver<Command>,
+    state: Arc<Mutex<State>>,
 }
 
 impl State {
@@ -128,48 +136,50 @@ impl State {
 
 impl PlayerBus {
     pub fn new() -> PlayerBus {
-        let (actions_sender, actions_receiver): (Sender<PlayerBusAction>, Receiver<PlayerBusAction>) = unbounded();
-        let (state_sender, state_receiver): (Sender<State>, Receiver<State>) = unbounded();
+        let (message_sender, message_receiver): (Sender<Command>, Receiver<Command>) = unbounded();
 
         PlayerBus{
-            actions_sender,
-            actions_receiver,
-            state_sender,
-            state_receiver,
+            message_sender,
+            message_receiver,
+            state: Arc::new(Mutex::new(State::default_state())),
         }
     }
 
-    pub fn call(&self, action: PlayerBusAction) {
-        debug!("[PlayerBus] Action called: {:?}", action);
-        let _ = self.actions_sender.send(action);
+    pub fn publish_message(&self, message: Message) {
+        let mut state = self.state.lock().unwrap();
+
+        let prev_state = state.clone();
+        let next_state = match message {
+            Message::PlayerPlayingNewTrack(track) => State { track: Some(TrackState::from(track)), player: PlayerState { case: PlayerStateCase::Playing, playing_time: Some(Duration::ZERO) } },
+            Message::PlayerPlaying => State { track: prev_state.track, player: PlayerState { case: PlayerStateCase::Playing, playing_time: prev_state.player.playing_time } },
+            Message::PlayerToPause => State { track: prev_state.track, player: PlayerState { case: PlayerStateCase::Paused, playing_time: prev_state.player.playing_time } },
+            Message::PlayerElapsed(duration) => State { track: prev_state.track, player: PlayerState { case: prev_state.player.case, playing_time: Some(duration) } },
+            Message::PlayerQueueIsEmpty => State { track: None, player: PlayerState { case: PlayerStateCase::Loading, playing_time: None } },
+            Message::UserPlay => { self.publish_command(Command::Play); prev_state },
+            Message::UserPause => { self.publish_command(Command::Pause); prev_state },
+            Message::UserPlayNext => { self.publish_command(Command::Next); prev_state },
+            Message::UserLike(track) => { self.publish_command(Command::Like(track)); prev_state },
+            Message::UserLoadRadio(track) => { self.publish_command(Command::Radio(track)); prev_state },
+        };
+
+        *state = next_state;
     }
 
-    pub fn read(&self) -> PlayerBusAction {
-        let actions: Vec<_> = self.actions_receiver.try_iter().collect();
+    pub fn publish_command(&self, command: Command) {
+        let _ = self.message_sender.send(command);
+    }
 
-        match actions.last() {
-            Some(action) => {
-                info!("[PlayerBus] Action readed: {:?}", action);
-                action.clone()
-            },
-            None => PlayerBusAction::Waiting,
+    pub fn read_command(&self) -> Option<Command> {
+        let command = self.message_receiver.try_recv();
+        debug!("[PlayerBus] Command readed: {:?}", command);
+
+        match command {
+            Ok(command) => Some(command),
+            Err(_) => None,
         }
     }
 
-    pub fn set_state(&self, state: State) {
-        debug!("[PlayerBus] Set state: {:?}", state);
-        let _ = self.state_sender.send(state);
-    }
-
-    pub fn read_state(&self) -> Option<State> {
-        let states: Vec<_> = self.state_receiver.try_iter().collect();
-        debug!("[PlayerBus] Read states: {:?}", states);
-
-        match states.last() {
-            Some(state) => {
-                Some(state.clone())
-            },
-            None => None,
-        }
+    pub fn read_state(&self) -> State {
+        self.state.lock().unwrap().clone()
     }
 }

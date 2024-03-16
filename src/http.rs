@@ -2,7 +2,7 @@ use log::info;
 use serde_json::Value;
 use tiny_http::{Response, Server};
 
-use crate::{discovery::DiscoveryStore, playerbus::{self, PlayerBus, PlayerBusAction}};
+use crate::{discovery::DiscoveryStore, playerbus::{self, PlayerBus}};
 
 pub fn server(discovery_store: DiscoveryStore, player_bus: PlayerBus) {
     let server = Server::http("0.0.0.0:8001").unwrap();
@@ -12,8 +12,9 @@ pub fn server(discovery_store: DiscoveryStore, player_bus: PlayerBus) {
             info!("[Server control] {}", request.url());
 
             match request.url() {
-                "/action/next" => player_bus.call(PlayerBusAction::NextSong),
-                "/action/play_pause" => player_bus.call(PlayerBusAction::PausePlay),
+                "/action/next" => player_bus.publish_message(playerbus::Message::UserPlayNext),
+                "/action/play" => player_bus.publish_message(playerbus::Message::UserPlay),
+                "/action/pause" => player_bus.publish_message(playerbus::Message::UserPause),
                 "/action/play_by_url" => {
                     let mut content = String::new();
                     request.as_reader().read_to_string(&mut content).unwrap();
@@ -23,23 +24,24 @@ pub fn server(discovery_store: DiscoveryStore, player_bus: PlayerBus) {
                     let tidal_url = result["url"].as_str().expect("Json required url string field");
                     let id = tidal_url.split("/").last().unwrap();
 
-                    if tidal_url.starts_with("https://tidal.com/track/") {
-                        player_bus.call(playerbus::PlayerBusAction::Waiting);
-                        let _ = discovery_store.discovery_track(id);
-                        player_bus.call(PlayerBusAction::NextSong);
-                    }
+                    todo!();
+                    // if tidal_url.starts_with("https://tidal.com/track/") {
+                    //     player_bus.call(playerbus::PlayerBusAction::Waiting);
+                    //     let _ = discovery_store.discovery_track(id);
+                    //     player_bus.call(PlayerBusAction::NextSong);
+                    // }
 
-                    if tidal_url.starts_with("https://tidal.com/album/") {
-                        player_bus.call(playerbus::PlayerBusAction::Waiting);
-                        let _ = discovery_store.discovery_album(id);
-                        player_bus.call(PlayerBusAction::NextSong);
-                    }
+                    // if tidal_url.starts_with("https://tidal.com/album/") {
+                    //     player_bus.call(playerbus::PlayerBusAction::Waiting);
+                    //     let _ = discovery_store.discovery_album(id);
+                    //     player_bus.call(PlayerBusAction::NextSong);
+                    // }
 
-                    if tidal_url.starts_with("https://tidal.com/artist/") {
-                        player_bus.call(playerbus::PlayerBusAction::Waiting);
-                        let _ = discovery_store.discovery_artist(id);
-                        player_bus.call(PlayerBusAction::NextSong);
-                    }
+                    // if tidal_url.starts_with("https://tidal.com/artist/") {
+                    //     player_bus.call(playerbus::PlayerBusAction::Waiting);
+                    //     let _ = discovery_store.discovery_artist(id);
+                    //     player_bus.call(PlayerBusAction::NextSong);
+                    // }
                 },
                 _ => {}
             }
