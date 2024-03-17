@@ -15,6 +15,24 @@ pub enum Command {
     Next,
     Like(String),
     Radio(String),
+    PlayTrackForce(String),
+    PlayAlbumForce(String),
+    PlayArtistForce(String),
+}
+
+impl Command {
+    pub fn as_string(&self) -> String {
+        match self {
+            Command::Play => "Play".to_owned(),
+            Command::Pause => "Pause".to_owned(),
+            Command::Next => "Next".to_owned(),
+            Command::Like(_) => "Like".to_owned(),
+            Command::Radio(_) => "Radio".to_owned(),
+            Command::PlayTrackForce(_) => "PlayTrackForce".to_owned(),
+            Command::PlayAlbumForce(_) => "PlayAlbumForce".to_owned(),
+            Command::PlayArtistForce(_) => "PlayArtistForce".to_owned(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -26,11 +44,17 @@ pub enum Message {
     PlayerElapsed(Duration),
     PlayerQueueIsEmpty,
 
+    TrackAddedToFavorites,
+    ForcePlay,
+
     UserPlay,
     UserPause,
     UserPlayNext,
     UserLike(String),
     UserLoadRadio(String),
+    UserPlayTrack(String),
+    UserPlayAlbum(String),
+    UserPlayArtist(String),
 }
 
 #[derive(Debug)]
@@ -116,9 +140,66 @@ impl From<Track> for TrackState {
 
 #[derive(Debug)]
 #[derive(Clone)]
-pub struct PlayerBus {
+pub struct BroadcastChannel {
     message_sender: Sender<Command>, 
     message_receiver: Receiver<Command>,
+    commands: Vec<String>
+}
+
+impl BroadcastChannel {
+    pub fn read_command(&self) -> Option<Command> {
+        let command = self.message_receiver.try_recv();
+        debug!("[PlayerBus] Command readed: {:?}", command);
+
+        match command {
+            Ok(command) => Some(command),
+            Err(_) => None,
+        }
+    }
+    fn send(&self, command: Command) {
+        let _ = self.message_sender.send(command);
+    }
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct Broadcast {
+    channels: Arc<Mutex<Vec<BroadcastChannel>>>,
+}
+
+impl Broadcast {
+    fn init() -> Broadcast {
+        Self {
+            channels: Arc::new(Mutex::new(vec![])),
+        }
+    }
+    pub fn register(&mut self, commands: Vec<String>) -> BroadcastChannel {
+        let (message_sender, message_receiver): (Sender<Command>, Receiver<Command>) = unbounded();
+        let channel = BroadcastChannel {
+            message_receiver,
+            message_sender,
+            commands: commands.clone(),
+        };
+        let new_channels = self.channels.clone();
+        new_channels.lock().unwrap().push(channel.clone());
+
+        info!("[PlayerBus] new channel on broadcast registred, commands: {:?}", commands);
+        channel
+    }
+    fn send(&self, command: Command) {
+        for channel in self.channels.lock().unwrap().iter() {
+            if channel.commands.contains(&command.as_string()) {
+                channel.send(command.clone());
+                info!("[PlayerBus] broadcast event sended, command: {:?}, channel: {:?}", command, channel);
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct PlayerBus {
+    broadcast: Broadcast,
     state: Arc<Mutex<State>>,
 }
 
@@ -136,11 +217,8 @@ impl State {
 
 impl PlayerBus {
     pub fn new() -> PlayerBus {
-        let (message_sender, message_receiver): (Sender<Command>, Receiver<Command>) = unbounded();
-
         PlayerBus{
-            message_sender,
-            message_receiver,
+            broadcast: Broadcast::init(),
             state: Arc::new(Mutex::new(State::default_state())),
         }
     }
@@ -159,24 +237,23 @@ impl PlayerBus {
             Message::UserPause => { self.publish_command(Command::Pause); prev_state },
             Message::UserPlayNext => { self.publish_command(Command::Next); prev_state },
             Message::UserLike(track) => { self.publish_command(Command::Like(track)); prev_state },
-            Message::UserLoadRadio(track) => { self.publish_command(Command::Radio(track)); prev_state },
+            Message::UserLoadRadio(track) => { self.publish_command(Command::Pause); self.publish_command(Command::Radio(track)); prev_state },
+            Message::UserPlayTrack(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayTrackForce(track)); prev_state },
+            Message::UserPlayAlbum(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayAlbumForce(track)); prev_state },
+            Message::UserPlayArtist(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayArtistForce(track)); prev_state },
+            Message::TrackAddedToFavorites => { prev_state },
+            Message::ForcePlay => { self.publish_command(Command::Next); prev_state },
         };
 
         *state = next_state;
     }
 
-    pub fn publish_command(&self, command: Command) {
-        let _ = self.message_sender.send(command);
+    pub fn register_command_channel(&mut self, commands: Vec<String>) -> BroadcastChannel {
+        self.broadcast.register(commands)
     }
 
-    pub fn read_command(&self) -> Option<Command> {
-        let command = self.message_receiver.try_recv();
-        debug!("[PlayerBus] Command readed: {:?}", command);
-
-        match command {
-            Ok(command) => Some(command),
-            Err(_) => None,
-        }
+    pub fn publish_command(&self, command: Command) {
+        let _ = self.broadcast.send(command);
     }
 
     pub fn read_state(&self) -> State {

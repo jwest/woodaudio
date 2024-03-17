@@ -1,6 +1,6 @@
 use rodio::{OutputStream, Decoder, Sink};
-use std::{io::Cursor, thread, time::{Duration, Instant}};
-use log::{debug, error, info};
+use std::{io::{BufReader, Cursor}, thread, time::{Duration, Instant}};
+use log::{debug, error};
 
 use crate::{playerbus::{Command, Message, PlayerBus}, playlist::{BufferedTrack, Playlist}};
 
@@ -15,8 +15,8 @@ fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
     }
 }
 
-fn source(track: BufferedTrack) -> Option<Decoder<std::io::Cursor<bytes::Bytes>>> {
-    let source_result = Decoder::new_flac(Cursor::new(track.stream));
+fn source(track: BufferedTrack) -> Option<Decoder<BufReader<std::io::Cursor<bytes::Bytes>>>> {
+    let source_result = Decoder::new_flac(BufReader::with_capacity(4194304, Cursor::new(track.stream)));
 
     match source_result {
         Ok(file) => Some(file),
@@ -27,7 +27,9 @@ fn source(track: BufferedTrack) -> Option<Decoder<std::io::Cursor<bytes::Bytes>>
     }
 }
 
-pub fn player(playlist: Playlist, player_bus: PlayerBus) {
+pub fn player(playlist: Playlist, mut player_bus: PlayerBus) {
+    let command_channel = player_bus.register_command_channel(vec![Command::Play.as_string(), Command::Pause.as_string(), Command::Next.as_string()]);
+
     let (_stream, stream_handle) = retry(OutputStream::try_default);
     let sink = Sink::try_new(&stream_handle).unwrap();
     
@@ -59,7 +61,7 @@ pub fn player(playlist: Playlist, player_bus: PlayerBus) {
                 }
             },
             false => {
-                match player_bus.read_command() {
+                match command_channel.read_command() {
                     Some(Command::Play) => {
                         sink.play();
                         player_bus.publish_message(Message::PlayerPlaying);
@@ -71,14 +73,7 @@ pub fn player(playlist: Playlist, player_bus: PlayerBus) {
                     Some(Command::Next) => {
                         sink.clear();
                     },
-                    Some(Command::Like(track)) => {
-                        todo!()
-                    },
-                    Some(Command::Radio(track)) => {
-                        todo!()
-                    },
-                    None => {},
-                    
+                    _ => {},
                 };
 
                 thread::sleep(Duration::from_millis(50));

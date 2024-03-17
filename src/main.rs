@@ -2,7 +2,7 @@ use env_logger::Target;
 use gui::Gui;
 use macroquad::window::Conf;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
-use std::thread;
+use std::{thread, time::Duration};
 
 mod playerbus;
 use playerbus::PlayerBus;
@@ -24,6 +24,42 @@ mod downloader;
 mod gui;
 mod http;
 
+fn service_module(discovery_store: DiscoveryStore, mut player_bus: PlayerBus, session: Session) {
+    thread::spawn(move || {
+        let channel = player_bus.register_command_channel(vec!["Radio".to_string(), "PlayTrackForce".to_string(), "PlayAlbumForce".to_string(), "PlayArtistForce".to_string(), "Like".to_string()]);
+
+        loop {
+            let command = channel.read_command();
+
+            match command {
+                Some(playerbus::Command::Radio(track_id)) => {
+                    let _ = discovery_store.discovery_radio(&track_id);
+                    player_bus.publish_message(playerbus::Message::ForcePlay);
+                },
+                Some(playerbus::Command::PlayTrackForce(track_id)) => {
+                    let _ = discovery_store.discovery_track(&track_id);
+                    player_bus.publish_message(playerbus::Message::ForcePlay);
+                },
+                Some(playerbus::Command::PlayAlbumForce(track_id)) => {
+                    let _ = discovery_store.discovery_album(&track_id);
+                    player_bus.publish_message(playerbus::Message::ForcePlay);
+                },
+                Some(playerbus::Command::PlayArtistForce(track_id)) => {
+                    let _ = discovery_store.discovery_artist(&track_id);
+                    player_bus.publish_message(playerbus::Message::ForcePlay);
+                },
+                Some(playerbus::Command::Like(track_id)) => {
+                    let _ = session.add_track_to_favorites(&track_id);
+                    player_bus.publish_message(playerbus::Message::TrackAddedToFavorites);
+                },
+                _ => {},
+            }
+
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    });
+}
+
 fn discovery_module(discovery_store: DiscoveryStore) {
     thread::spawn(move || {
         let _ = discovery_store.discover_mixes();
@@ -42,11 +78,11 @@ fn downloader_module(session: Session, playlist: Playlist) {
     });
 }
 
-fn server_module(discovery_store: DiscoveryStore, player_bus: PlayerBus) {
+fn server_module(player_bus: PlayerBus) {
     thread::Builder::new()
         .name("Server module".to_owned())
         .spawn_with_priority(ThreadPriority::Min, |_| {
-            http::server(discovery_store, player_bus);
+            http::server(player_bus);
     }).unwrap();
 }
 
@@ -83,7 +119,8 @@ async fn main() {
     let discovery_store = DiscoveryStore::new(session.clone(), playlist.clone());
     
     discovery_module(discovery_store.clone());
-    server_module(discovery_store.clone(), player_bus.clone());
+    service_module(discovery_store.clone(), player_bus.clone(), session.clone());
+    server_module(player_bus.clone());
     downloader_module(session.clone(), playlist.clone());
     player_module(playlist.clone(), player_bus.clone());
 

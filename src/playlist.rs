@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{thread, time::Duration};
+use std::{sync::{Arc, Mutex}, thread, time::Duration};
 use bytes::Bytes;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
@@ -75,10 +75,11 @@ impl fmt::Debug for BufferedTrack {
 #[derive(Clone)]
 pub struct Playlist {
     buffer_limit: usize,
-    sender: Sender<Track>, 
+    sender: Arc<Mutex<Sender<Track>>>,
     receiver: Receiver<Track>,
     buffered_sender: Sender<BufferedTrack>, 
     buffered_receiver: Receiver<BufferedTrack>,
+    force_lock: Arc<Mutex<bool>>,
 }
 
 impl Playlist {
@@ -88,15 +89,18 @@ impl Playlist {
 
         Playlist{
             buffer_limit: 3,
-            sender,
+            sender: Arc::new(Mutex::new(sender)),
             receiver,
             buffered_sender,
             buffered_receiver,
+            force_lock: Arc::new(Mutex::new(false)),
         }
     }
 
     pub fn buffer_worker(&self, f: impl Fn(Track) -> BufferedTrack) {
         loop {
+            let old_force_lock = self.force_lock.lock().unwrap().clone();
+            
             if self.buffered_receiver.len() > self.buffer_limit {
                 thread::sleep(Duration::from_secs(3));
                 continue;
@@ -105,7 +109,14 @@ impl Playlist {
             match self.receiver.recv() {
                 Ok(track) => {
                     info!("[Playlist worker] Buffer track: {:?}", track);
-                    let _ = self.buffered_sender.send(f(track));
+                    let buffered_track = f(track.clone());
+                    let mut force_lock = self.force_lock.lock().unwrap();
+                    if old_force_lock == false && force_lock.eq(&true) {
+                        info!("[Playlist worker] force lock ignore trakc {:?}", track);
+                        *force_lock = false;
+                    } else {
+                        let _ = self.buffered_sender.send(buffered_track);
+                    }
                 },
                 Err(_) => thread::sleep(Duration::from_secs(3)),
             }
@@ -114,43 +125,51 @@ impl Playlist {
 
     pub fn push(&self, tracks: Vec<Track>) {
         debug!("[Playlist] Push tracks: {:?}", tracks);
-        tracks.iter()
-            .for_each(|t| { let _ = self.sender.send(t.clone()); });
+        let _ = self.sender.lock().map(|sender| {
+            tracks.iter()
+                .for_each(|t| { let _ = sender.send(t.clone()); });
+        });
     }
 
     pub fn pop(&self) -> Option<BufferedTrack> {
-        match self.buffered_receiver.try_recv() {
-            Ok(track) => {
-                info!("[Playlist] Pop track: {:?}", track);
-                Some(track)
-            },
-            Err(_) => None,
-        }
+        self.sender.lock().map(|_| {
+            match self.buffered_receiver.try_recv() {
+                Ok(track) => {
+                    info!("[Playlist] Pop track: {:?}", track);
+                    Some(track)
+                },
+                Err(_) => None,
+            }
+        }).unwrap()
     }
     
     pub fn push_force(&self, tracks: Vec<Track>) {
         debug!("[Playlist] Force push tracks: {:?}", tracks);
         
-        let mut existing_tracks: Vec<Track> = vec![];
+        let _ = self.sender.lock().map(|sender| {
+            let mut force_lock = self.force_lock.lock().unwrap();
+            *force_lock = true;
 
-        loop {
-            match self.receiver.try_recv() {
-                Ok(track) => existing_tracks.push(track),
-                Err(_) => break,
+            let mut existing_tracks: Vec<Track> = tracks;
+    
+            loop {
+                match self.buffered_receiver.recv_timeout(Duration::from_millis(300)) {
+                    Ok(buffered_track) => existing_tracks.push(buffered_track.track),
+                    Err(_) => break,
+                }
             }
-        }
 
-        loop {
-            match self.buffered_receiver.try_recv() {
-                Ok(buffered_track) => existing_tracks.push(buffered_track.track),
-                Err(_) => break,
+            loop {
+                match self.receiver.recv_timeout(Duration::from_millis(300)) {
+                    Ok(track) => existing_tracks.push(track),
+                    Err(_) => break,
+                }
             }
-        }
 
-        tracks.iter()
-            .for_each(|track| { let _ = self.sender.send(track.clone()); });
+            existing_tracks.iter()
+                .for_each(|track| { let _ = sender.send(track.clone()); });
 
-        existing_tracks.iter()
-            .for_each(|track| { let _ = self.sender.send(track.clone()); });
+            info!("[Playlist] playlist after push force: {:?}", existing_tracks);
+        }).unwrap();
     }
 }

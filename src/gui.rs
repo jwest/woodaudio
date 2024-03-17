@@ -232,7 +232,6 @@ impl Button for TrackRadioButton {
             return Screen::Player;
         }
         self.player_bus.publish_message(Message::UserLoadRadio(state.track.unwrap().id));
-        // let _ = self.discovery_store.discovery_radio(&state.track.unwrap().id);
         Screen::Player
     }
 }
@@ -259,7 +258,6 @@ impl Button for LikeButton {
             return Screen::Player;
         }
         self.player_bus.publish_message(Message::UserLike(state.track.unwrap().id));
-        // let _ = self.session.add_track_to_favorites(&state.track.unwrap().id);
         Screen::Player
     }
 }

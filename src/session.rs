@@ -6,9 +6,9 @@ use ini::Ini;
 
 use std::error::Error;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::{time, thread};
-use log::{error, info};
+use log::info;
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -43,8 +43,8 @@ struct ResponseMedia {
 pub struct DeviceAuthorization {
     verification_uri_complete: String,
     device_code: String,
-    expiresIn: u16,
-    interval: u16,
+    // expires_in: u16,
+    // interval: u16,
 }
 
 impl DeviceAuthorization {
