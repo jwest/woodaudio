@@ -11,7 +11,6 @@ pub enum Screen {
 }
 
 trait ScreenRender {
-    fn name(&self) -> Screen;
     fn render(&self, gui: &Gui) -> Screen;
 }
 
@@ -46,9 +45,6 @@ impl Actions {
 }
 
 impl ScreenRender for Actions {
-    fn name(&self) -> Screen {
-        Screen::Actions
-    }
     fn render(&self, gui: &Gui) -> Screen {
         let button_size = 48.0;
 
@@ -384,7 +380,7 @@ impl Gui {
     
             next_frame().await;
 
-            std::thread::sleep(Duration::from_millis(50));
+            std::thread::sleep(Duration::from_millis(20));
         }
     }
 

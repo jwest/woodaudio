@@ -19,8 +19,10 @@ use sessiongui::SessionGui;
 mod discovery;
 use discovery::DiscoveryStore;
 
-mod player;
 mod downloader;
+use downloader::Downloader;
+
+mod player;
 mod gui;
 mod http;
 
@@ -67,10 +69,10 @@ fn discovery_module(discovery_store: DiscoveryStore) {
     });
 }
 
-fn downloader_module(session: Session, playlist: Playlist) {
+fn downloader_module(downloader: Downloader, playlist: Playlist) {
     thread::spawn(move || {
         playlist.buffer_worker(|track| {
-            match downloader::download_file(track, &session) {
+            match downloader.download_file(track) {
                 Ok(buffered_track) => buffered_track,
                 Err(err) => panic!("{:?}", err),
             }
@@ -112,16 +114,18 @@ async fn main() {
         .init();
 
     let config_path = home::home_dir().unwrap().join("config.ini");
-    let session = SessionGui::init(config_path).gui_loop().await;
+    
+    let session = SessionGui::init(config_path.clone()).gui_loop().await;
 
     let playlist = Playlist::new();
     let player_bus = PlayerBus::new();
     let discovery_store = DiscoveryStore::new(session.clone(), playlist.clone());
+    let downloader = Downloader::init(session.clone(), config_path);
     
     discovery_module(discovery_store.clone());
     service_module(discovery_store.clone(), player_bus.clone(), session.clone());
     server_module(player_bus.clone());
-    downloader_module(session.clone(), playlist.clone());
+    downloader_module(downloader, playlist.clone());
     player_module(playlist.clone(), player_bus.clone());
 
     Gui::init(player_bus.clone())

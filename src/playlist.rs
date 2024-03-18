@@ -24,11 +24,18 @@ impl Track {
             "0dfd3368-3aa1-49a3-935f-10ffb39803c0" 
         }.replace("-", "/");
 
+        let artist_name = item["artists"].as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .map(|item| item["name"].as_str().unwrap())
+            .collect::<Vec<&str>>()
+            .join(", ");
+
         Track {
             id: item["id"].as_i64().unwrap().to_string(),
-            title: item["title"].as_str().unwrap_or("").to_string(),
-            artist_name: item["artist"]["name"].as_str().unwrap_or("").to_string(),
-            album_name: item["album"]["title"].as_str().unwrap_or("").to_string(),
+            title: item["title"].as_str().unwrap_or_default().to_string(),
+            artist_name,
+            album_name: item["album"]["title"].as_str().unwrap_or_default().to_string(),
             album_image: format!("https://resources.tidal.com/images/{}/{}x{}.jpg", cover, 320, 320),
             duration: Duration::from_secs(item["duration"].as_u64().unwrap_or_default()),
         }
@@ -99,8 +106,6 @@ impl Playlist {
 
     pub fn buffer_worker(&self, f: impl Fn(Track) -> BufferedTrack) {
         loop {
-            let old_force_lock = self.force_lock.lock().unwrap().clone();
-            
             if self.buffered_receiver.len() > self.buffer_limit {
                 thread::sleep(Duration::from_secs(3));
                 continue;
@@ -108,8 +113,11 @@ impl Playlist {
 
             match self.receiver.recv() {
                 Ok(track) => {
+                    let old_force_lock = self.force_lock.lock().unwrap().clone();
+                    
                     info!("[Playlist worker] Buffer track: {:?}", track);
                     let buffered_track = f(track.clone());
+
                     let mut force_lock = self.force_lock.lock().unwrap();
                     if old_force_lock == false && force_lock.eq(&true) {
                         info!("[Playlist worker] force lock ignore trakc {:?}", track);
@@ -169,7 +177,7 @@ impl Playlist {
             existing_tracks.iter()
                 .for_each(|track| { let _ = sender.send(track.clone()); });
 
-            info!("[Playlist] playlist after push force: {:?}", existing_tracks);
+            debug!("[Playlist] playlist after push force: {:?}", existing_tracks);
         }).unwrap();
     }
 }

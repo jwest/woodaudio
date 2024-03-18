@@ -192,6 +192,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "cfg_aliases"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77e53693616d3075149f4ead59bdeecd204ac6b8192d8969757601b74bddf00f"
+
+[[package]]
 name = "chunked_transfer"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1330,6 +1336,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pavao"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4bba756ed4c021ecf3a962bc93ddaba3f364fd05d15a7021f072d9003ee3926"
+dependencies = [
+ "cfg_aliases",
+ "lazy_static",
+ "libc",
+ "log",
+ "pkg-config",
+ "thiserror",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1658,6 +1678,15 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "secular"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0dd0cba6d9810b4cbb984d54e8c0aa16f9c3f57011baba57cb2cc5c6f3011648"
+dependencies = [
+ "unicode-normalization",
+]
 
 [[package]]
 name = "security-framework"
@@ -2525,10 +2554,12 @@ dependencies = [
  "image",
  "log",
  "macroquad",
+ "pavao",
  "rand",
  "reqwest",
  "rodio",
  "rust-ini",
+ "secular",
  "serde",
  "serde_json",
  "shellexpand",
