@@ -1,84 +1,73 @@
-use std::{error::Error, io::{self, Cursor, Read}, time::Duration};
+use std::{error::Error, io::{Cursor, Read}, sync::{Arc, Mutex}, time::Duration};
 
 use bytes::Buf;
 use image::io::Reader as ImageReader;
-use log::{debug, info};
-use pavao::{SmbClient, SmbCredentials, SmbOpenOptions, SmbOptions};
+use log::{debug, error, info};
 use reqwest::blocking::Client;
 use secular::normalized_lower_lay_string;
+use suppaftp::FtpStream;
 use tempfile::NamedTempFile;
 
-use crate::{config::{Config, ExporterSambaConfig}, playlist::{BufferedTrack, Cover, Track}, session::Session};
+use crate::{config::{Config, ExporterFTPConfig}, playlist::{BufferedTrack, Cover, Track}, session::Session};
 
 trait CacheRead {
-    fn read_file(&self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<bytes::Bytes>, Box<dyn Error>>;
+    fn read_file(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<bytes::Bytes>, Box<dyn Error>>;
 }
 
 trait Exporter {
-    fn write_file(&self, source: bytes::Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>>;
+    fn write_file(&mut self, source: bytes::Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>>;
 }
 
-struct SambaStorage {
-    client: SmbClient,
+struct FtpStorage {
+    client: FtpStream,
     cache_read: bool,
+    output_path: String,
 }
 
-impl SambaStorage {
-    fn init(config: ExporterSambaConfig) -> Self {
-        let client = SmbClient::new(
-            SmbCredentials::default()
-                .server(config.server)
-                .share(config.share)
-                .password(config.password)
-                .username(config.username)
-                .workgroup(config.workgroup),
-            SmbOptions::default().one_share_per_server(true),
-        ).unwrap();
+impl FtpStorage {
+    fn init(config: ExporterFTPConfig) -> Self {
+        let mut client = FtpStream::connect(config.server).unwrap();
+        client.login(config.username, config.password).unwrap();
 
-        Self { client, cache_read: config.cache_read }
+        Self { client, cache_read: config.cache_read, output_path: config.share }
     }
 }
 
-impl Exporter for SambaStorage {
-    fn write_file(&self, source: bytes::Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
+impl Exporter for FtpStorage {
+    fn write_file(&mut self, source: bytes::Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
         let file_name = match output_dir {
             Some(dir) => {
-                self.client.mkdir(dir, 0o755.into())?;
+                self.client.mkdir(dir)?;
                 format!("/{}/{}", dir, output_file_name)
             },
-            None => format!("/{}", output_file_name),
+            None => format!("{}{}", self.output_path, output_file_name),
         };
 
-        let mut reader = source.reader();
-        let mut writer = self.client.open_with(
+        self.client.put_file(
             file_name.clone(),
-            SmbOpenOptions::default().create(true).write(true),
+            &mut source.reader()
         )?;
 
-        io::copy(&mut reader, &mut writer)?;
-        info!("[Exporter] file saved on samba: {:?}", file_name);
+        info!("[Exporter] file saved on ftp: {:?}", file_name);
         Ok(())
     }
 }
 
-impl CacheRead for SambaStorage {
-    fn read_file(&self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<bytes::Bytes>, Box<dyn Error>> {
+impl CacheRead for FtpStorage {
+    fn read_file(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<bytes::Bytes>, Box<dyn Error>> {
         if !self.cache_read {
             return Ok(None);
         }
 
         let file_name = match output_dir {
             Some(dir) => {
-                self.client.mkdir(dir, 0o755.into())?;
+                self.client.mkdir(dir)?;
                 format!("/{}/{}", dir, output_file_name)
             },
-            None => format!("/{}", output_file_name),
+            None => format!("{}{}", self.output_path, output_file_name),
         };
 
-        let mut reader = self.client.open_with(
-            file_name.clone(),
-            SmbOpenOptions::default().create(true).write(true),
-        )?;
+        let mut reader = self.client.retr_as_stream(file_name.clone())?;
 
         let mut output = bytes::BytesMut::new();
         reader.read(&mut output)?;
@@ -88,14 +77,14 @@ impl CacheRead for SambaStorage {
             return Ok(None);
         }
 
-        info!("[Cache] file readed from samba: {:?} {:?}", file_name, output);
+        info!("[Cache] file readed from ftp: {:?} {:?}", file_name, output);
 
         Ok(Some(output.into()))
     }
 }
 
 pub struct Downloader {
-    storage: Option<SambaStorage>,
+    storage: Arc<Mutex<Option<FtpStorage>>>,
     session: Session,
     display_cover_background: bool,
     display_cover_foreground: bool,
@@ -109,13 +98,13 @@ impl Track {
 
 impl Downloader {
     pub fn init(session: Session, config: &Config) -> Self {
-        let storage = match config.exporter_samba.enabled {
-            true => Some(SambaStorage::init(config.exporter_samba.clone())),
+        let storage = match config.exporter_ftp.enabled {
+            true => Some(FtpStorage::init(config.exporter_ftp.clone())),
             false => None,
         };
 
         Downloader { 
-            storage,
+            storage: Arc::new(Mutex::new(storage)),
             session, 
             display_cover_background: config.gui.display_cover_background, 
             display_cover_foreground: config.gui.display_cover_foreground,
@@ -123,12 +112,13 @@ impl Downloader {
     }
     
     pub fn download_file(&self, track: Track) -> Result<BufferedTrack, Box<dyn Error>> {
-        if self.storage.is_some() {
-            match self.storage.as_ref().unwrap().read_file(&track.file_name(), None) {
+        if let Some(ftp_storage) = self.storage.lock().unwrap().as_mut() {
+            match ftp_storage.read_file(&track.file_name(), None) {
                 Ok(Some(file)) => {
+                    info!("[Storage] cache exists {:?}", track);
                     return Ok(BufferedTrack {
                         track: track.clone(),
-                        stream: file,
+                        stream: file.clone(),
                         cover: match self.download_album_cover(track.album_image) {
                             Ok(cover) => cover,
                             Err(_) => Cover::empty(),
@@ -136,7 +126,7 @@ impl Downloader {
                     })
                 },
                 _ => {
-                    debug!("[Storage] cache empty or error for {:?}", track);
+                    info!("[Storage] cache empty or error for {:?}", track);
                 },
             }
         }
@@ -153,9 +143,16 @@ impl Downloader {
 
             let bytes_response = file_response.bytes()?;
     
-            if self.storage.is_some() {
+            if let Some(ftp_storage) = self.storage.lock().unwrap().as_mut() {
                 let export_bytes = bytes_response.clone();
-                self.storage.as_ref().unwrap().write_file(export_bytes, &track.file_name(), None)?;
+                match ftp_storage.write_file(export_bytes, &track.file_name(), None) {
+                    Ok(_) => {
+                        info!("[Storage] cache file wrote, track: {:?}", track);
+                    },
+                    Err(err) => {
+                        error!("[Storage] cache file wrote error, track: {:?}, error: {:?}", track, err);
+                    },
+                }
             }
 
             return Ok(BufferedTrack {

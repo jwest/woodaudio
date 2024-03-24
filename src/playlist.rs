@@ -4,6 +4,7 @@ use bytes::Bytes;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use log::{debug, info};
+use macroquad::logging::error;
 use serde_json::Value;
 
 #[derive(Clone)]
@@ -132,7 +133,9 @@ impl Playlist {
                                 let _ = self.buffered_sender.send(buffered_track);
                             }
                         },
-                        None => todo!(),
+                        None => {
+                            error!("[Playlist worker] Buffered track is empty {:?}", track);
+                        },
                     }
                 },
                 Err(_) => thread::sleep(Duration::from_secs(3)),

@@ -73,8 +73,10 @@ fn discovery_module(discovery_store: DiscoveryStore) {
     });
 }
 
-fn downloader_module(downloader: Downloader, playlist: Playlist) {
+fn downloader_module(session: Session, config: Config, playlist: Playlist) {
     thread::spawn(move || {
+        let downloader = Downloader::init(session, &config);
+
         playlist.buffer_worker(|track| {
             match downloader.download_file(track) {
                 Ok(buffered_track) => Some(buffered_track),
@@ -124,12 +126,11 @@ async fn main() {
     let playlist = Playlist::new();
     let player_bus = PlayerBus::new();
     let discovery_store = DiscoveryStore::new(session.clone(), playlist.clone());
-    let downloader = Downloader::init(session.clone(), &config.clone());
     
     discovery_module(discovery_store.clone());
     service_module(discovery_store.clone(), player_bus.clone(), session.clone());
     server_module(player_bus.clone());
-    downloader_module(downloader, playlist.clone());
+    downloader_module(session.clone(), config.clone(), playlist.clone());
     player_module(playlist.clone(), player_bus.clone());
 
     Gui::init(player_bus.clone())

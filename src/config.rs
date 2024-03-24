@@ -87,37 +87,34 @@ impl GuiConfig {
 
 #[derive(Debug)]
 #[derive(Clone)]
-pub struct ExporterSambaConfig {
+pub struct ExporterFTPConfig {
     pub enabled: bool,
     pub server: String,
     pub share: String,
     pub password: String,
     pub username: String,
-    pub workgroup: String,
     pub cache_read: bool,
 }
 
-impl ExporterSambaConfig {
+impl ExporterFTPConfig {
     fn init(conf: &Ini) -> Self {
-        let properties = conf.section(Some("ExporterSamba"));
+        let properties = conf.section(Some("ExporterFTP"));
         Self {
             enabled: properties.get_bool("enabled"),
             server: properties.get_string("server"),
             share: properties.get_string("share"),
             password: properties.get_string("password"),
             username: properties.get_string("username"),
-            workgroup: properties.get_string("workgroup"),
             cache_read: properties.get_bool("cache_read"),
         }
     }
     fn prepare_to_save(&self, ini: &mut Ini) {
-        ini.with_section(Some("ExporterSamba"))
+        ini.with_section(Some("ExporterFTP"))
             .set("enabled", bool_to_string(self.enabled))
             .set("server", self.server.clone())
             .set("share", self.share.clone())
             .set("password", self.password.clone())
             .set("username", self.username.clone())
-            .set("workgroup", self.workgroup.clone())
             .set("cache_read", bool_to_string(self.cache_read));
     }
 }
@@ -128,7 +125,7 @@ pub struct Config {
     path: PathBuf,
     pub tidal: TidalConfig,
     pub gui: GuiConfig,
-    pub exporter_samba: ExporterSambaConfig,
+    pub exporter_ftp: ExporterFTPConfig,
 }
 
 impl Config {
@@ -143,14 +140,14 @@ impl Config {
             path: path,
             tidal: TidalConfig::init(&conf),
             gui: GuiConfig::init(&conf), 
-            exporter_samba: ExporterSambaConfig::init(&conf),
+            exporter_ftp: ExporterFTPConfig::init(&conf),
         }
     }
     pub fn save(&self) {
         let mut conf = Ini::new();
         self.tidal.prepare_to_save(&mut conf);
         self.gui.prepare_to_save(&mut conf);
-        self.exporter_samba.prepare_to_save(&mut conf);
+        self.exporter_ftp.prepare_to_save(&mut conf);
         conf.write_to_file(self.path.clone()).unwrap();
     }
 }
