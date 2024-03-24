@@ -168,7 +168,7 @@ impl Downloader {
             })
         }
     
-        panic!("Track Download fail!");
+        Err("Track Download fail!".into())
     }
 
     fn download_album_cover(&self, cover_url: String) -> Result<Cover, Box<dyn Error>> {

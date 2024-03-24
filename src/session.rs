@@ -85,7 +85,7 @@ impl DeviceAuthorization {
             }
         }
 
-        panic!("[Session] login with link timeout");
+        self.wait_for_link(config)
     }
 }
 
