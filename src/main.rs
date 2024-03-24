@@ -23,6 +23,9 @@ use discovery::DiscoveryStore;
 mod downloader;
 use downloader::Downloader;
 
+mod config;
+use config::Config;
+
 mod player;
 mod gui;
 mod http;
@@ -114,14 +117,14 @@ async fn main() {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let config_path = home::home_dir().unwrap().join("config.ini");
+    let config = Config::init_default_path();
     
-    let session = SessionGui::init(config_path.clone()).gui_loop().await;
+    let session = SessionGui::init(config.clone()).gui_loop().await;
 
     let playlist = Playlist::new();
     let player_bus = PlayerBus::new();
     let discovery_store = DiscoveryStore::new(session.clone(), playlist.clone());
-    let downloader = Downloader::init(session.clone(), config_path);
+    let downloader = Downloader::init(session.clone(), &config.clone());
     
     discovery_module(discovery_store.clone());
     service_module(discovery_store.clone(), player_bus.clone(), session.clone());

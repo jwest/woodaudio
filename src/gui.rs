@@ -361,11 +361,15 @@ impl Gui {
         self.state = new_state;
         if self.state.track.is_some() {
             let track = self.state.track.clone().unwrap();
-            if track.cover.is_some() {
-                if !track.cover.clone().unwrap().foreground.eq(self.cover_foreground_path.as_str()) {
-                    self.cover_foreground_path = track.cover.clone().unwrap().foreground.clone();
+            if track.cover.foreground.is_some() {
+                if !track.cover.clone().foreground.unwrap().eq(self.cover_foreground_path.as_str()) {
+                    self.cover_foreground_path = track.cover.clone().foreground.unwrap().clone();
                     self.cover_foreground = load_texture(self.cover_foreground_path.as_str()).await.unwrap();
-                    self.cover_background_path = track.cover.clone().unwrap().background.clone();
+                }
+            }
+            if track.cover.background.is_some() {
+                if !track.cover.clone().background.unwrap().eq(self.cover_background_path.as_str()) {
+                    self.cover_background_path = track.cover.clone().background.unwrap().clone();
                     self.cover_background = load_texture(self.cover_background_path.as_str()).await.unwrap();
                 }
             }

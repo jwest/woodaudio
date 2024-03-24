@@ -61,15 +61,21 @@ impl fmt::Debug for Track {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct Cover {
-    pub foreground: String, 
-    pub background: String,
+    pub foreground: Option<String>, 
+    pub background: Option<String>,
+}
+
+impl Cover {
+    pub fn empty() -> Self {
+        Self { foreground: None, background: None }
+    }
 }
 
 #[derive(Clone)]
 pub struct BufferedTrack {
     pub track: Track,
     pub stream: Bytes,
-    pub cover: Option<Cover>,
+    pub cover: Cover,
 }
 
 impl fmt::Debug for BufferedTrack {

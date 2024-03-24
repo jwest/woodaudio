@@ -1,15 +1,14 @@
-use std::{error::Error, io::{self, Cursor, Read}, path::PathBuf, time::Duration};
+use std::{error::Error, io::{self, Cursor, Read}, time::Duration};
 
 use bytes::Buf;
 use image::io::Reader as ImageReader;
-use ini::Ini;
 use log::{debug, info};
 use pavao::{SmbClient, SmbCredentials, SmbOpenOptions, SmbOptions};
 use reqwest::blocking::Client;
 use secular::normalized_lower_lay_string;
 use tempfile::NamedTempFile;
 
-use crate::{playlist::{BufferedTrack, Cover, Track}, session::Session};
+use crate::{config::{Config, ExporterSambaConfig}, playlist::{BufferedTrack, Cover, Track}, session::Session};
 
 trait CacheRead {
     fn read_file(&self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<bytes::Bytes>, Box<dyn Error>>;
@@ -25,31 +24,18 @@ struct SambaStorage {
 }
 
 impl SambaStorage {
-    fn init(config_path: PathBuf) -> Self {
-        let conf = Ini::load_from_file(config_path).unwrap();
-
-        let exporter_smb_section = conf.section(Some("Exporter_smb")).unwrap();
-        let server = exporter_smb_section.get("server").unwrap();
-        let share = exporter_smb_section.get("share").unwrap();
-        let password = exporter_smb_section.get("password").unwrap();
-        let username = exporter_smb_section.get("username").unwrap();
-        let workgroup = exporter_smb_section.get("workgroup").unwrap();
-        let cache_read = match exporter_smb_section.get("workgroup").unwrap() {
-            "true" => true,
-            _ => false,
-        };
-
+    fn init(config: ExporterSambaConfig) -> Self {
         let client = SmbClient::new(
             SmbCredentials::default()
-                .server(server)
-                .share(share)
-                .password(password)
-                .username(username)
-                .workgroup(workgroup),
+                .server(config.server)
+                .share(config.share)
+                .password(config.password)
+                .username(config.username)
+                .workgroup(config.workgroup),
             SmbOptions::default().one_share_per_server(true),
         ).unwrap();
 
-        Self { client, cache_read }
+        Self { client, cache_read: config.cache_read }
     }
 }
 
@@ -111,6 +97,8 @@ impl CacheRead for SambaStorage {
 pub struct Downloader {
     storage: Option<SambaStorage>,
     session: Session,
+    display_cover_background: bool,
+    display_cover_foreground: bool,
 }
 
 impl Track {
@@ -120,18 +108,17 @@ impl Track {
 }
 
 impl Downloader {
-    pub fn init(session: Session, config_path: PathBuf) -> Self {
-        let conf = Ini::load_from_file(config_path.clone()).unwrap();
-
-        let exporter_smb_section = conf.section(Some("Exporter")).unwrap();
-        let storage = match exporter_smb_section.get("enabled").unwrap() {
-            "smb" => Some(SambaStorage::init(config_path)),
-            _ => None,
+    pub fn init(session: Session, config: &Config) -> Self {
+        let storage = match config.exporter_samba.enabled {
+            true => Some(SambaStorage::init(config.exporter_samba.clone())),
+            false => None,
         };
 
         Downloader { 
             storage,
-            session
+            session, 
+            display_cover_background: config.gui.display_cover_background, 
+            display_cover_foreground: config.gui.display_cover_foreground,
         }
     }
     
@@ -143,8 +130,8 @@ impl Downloader {
                         track: track.clone(),
                         stream: file,
                         cover: match self.download_album_cover(track.album_image) {
-                            Ok(cover) => Some(cover),
-                            Err(_) => None,
+                            Ok(cover) => cover,
+                            Err(_) => Cover::empty(),
                         },
                     })
                 },
@@ -175,8 +162,8 @@ impl Downloader {
                 track: track.clone(),
                 stream: bytes_response,
                 cover: match self.download_album_cover(track.album_image) {
-                    Ok(cover) => Some(cover),
-                    Err(_) => None,
+                    Ok(cover) => cover,
+                    Err(_) => Cover::empty(),
                 },
             })
         }
@@ -185,6 +172,10 @@ impl Downloader {
     }
 
     fn download_album_cover(&self, cover_url: String) -> Result<Cover, Box<dyn Error>> {
+        if !self.display_cover_background && !self.display_cover_foreground {
+            return Ok(Cover::empty());
+        }
+
         debug!("[Downloader] Prepare cover '{}'...", cover_url);
     
         let file_response = Client::builder()
@@ -192,30 +183,45 @@ impl Downloader {
             .build()?.get(&cover_url).send()?;
     
         let cover = ImageReader::new(Cursor::new(file_response.bytes()?)).with_guessed_format()?.decode()?;
-        let background = cover.clone();
-    
-        let file = NamedTempFile::new()?;
-        let path = file.into_temp_path();
-        let path_str = path.keep()?.to_str().unwrap().to_string();
+
+        let path_str = match self.display_cover_foreground {
+            true => {
+                let file = NamedTempFile::new()?;
+                let path = file.into_temp_path();
+                let image_str = path.keep()?.to_str().unwrap().to_string();
+                let _ = cover
+                    .resize(320, 320, image::imageops::FilterType::Nearest)
+                    .save_with_format(&image_str, image::ImageFormat::Png)
+                    .unwrap();
+                Some(image_str)
+            },
+            false => None,
+        };
+
+        let background_path_str = match self.display_cover_background {
+            true => {
+                let background = cover.clone();
+                let background_file = NamedTempFile::new()?;
+                let background_path = background_file.into_temp_path();
+                let background_path_str = background_path.keep()?.to_str().unwrap().to_string();
+                
+                let _ = background
+                    .brighten(-75)
+                    .resize(1024, 1024, image::imageops::FilterType::Nearest)
+                    .blur(10.0)
+                    .save_with_format(&background_path_str, image::ImageFormat::Png)
+                    .unwrap();
+
+                Some(background_path_str)
+            },
+            false => None,
+        };
         
-        let _ = cover
-            .resize(320, 320, image::imageops::FilterType::Nearest)
-            .save_with_format(&path_str, image::ImageFormat::Png)
-            .unwrap();
+        debug!("[Downloader] Cover prepared '{}', foreground: {:?}, background: {:?}", cover_url, path_str, background_path_str);
     
-        let background_file = NamedTempFile::new()?;
-        let background_path = background_file.into_temp_path();
-        let background_path_str = background_path.keep()?.to_str().unwrap().to_string();
-        
-        let _ = background
-            .brighten(-75)
-            .resize(1024, 1024, image::imageops::FilterType::Nearest)
-            .blur(10.0)
-            .save_with_format(&background_path_str, image::ImageFormat::Png)
-            .unwrap();
-        
-        debug!("[Downloader] Cover prepared '{}', {}", cover_url, path_str);
-    
-        Ok(Cover { background: background_path_str, foreground: path_str })
+        Ok(Cover { 
+            foreground: path_str,
+            background: background_path_str, 
+        })
     }
 }

@@ -2,13 +2,13 @@ use reqwest::blocking::{Client, Response};
 use reqwest::header;
 use serde::Deserialize;
 use serde_json::Value;
-use ini::Ini;
 
 use std::error::Error;
-use std::path::PathBuf;
 use std::time::Duration;
 use std::{time, thread};
 use log::info;
+
+use crate::config::Config;
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -51,12 +51,12 @@ impl DeviceAuthorization {
     pub fn format_url(&self) -> String {
         format!("https://{}", self.verification_uri_complete)
     }
-    pub fn wait_for_link(&self, config_path: PathBuf) -> Result<Session, Box<dyn Error>> {
+    pub fn wait_for_link(&self, config: &mut Config) -> Result<Session, Box<dyn Error>> {
         let client_id = "zU4XHVVkc2tDPo4t";
         let client_secret = "VJKhDFqJPqvsPVNBV6ukXTJmwlvbttP7wlMlrc72se4%3D";
         let client = reqwest::blocking::Client::builder().build()?;
 
-        for _ in 0..15 {
+        for _ in 0..60 {
             thread::sleep(Duration::from_secs(2));
 
             let params = &[
@@ -75,16 +75,13 @@ impl DeviceAuthorization {
 
             if res.status().is_success() {
                 let session_response = res.json::<ResponseSession>()?;
-                let mut conf = Ini::new();
 
-                conf.with_section(Some("Tidal"))
-                    .set("token_type", session_response.token_type)
-                    .set("access_token", session_response.access_token)
-                    .set("refresh_token", session_response.refresh_token);
-                
-                conf.write_to_file(config_path.clone())?;
+                config.tidal.token_type = session_response.token_type;
+                config.tidal.access_token = session_response.access_token;
+                config.tidal.refresh_token = session_response.refresh_token;
+                config.save();
 
-                return Session::try_from_file(config_path)
+                return Session::try_from_file(&config)
             }
         }
 
@@ -101,14 +98,8 @@ struct ResponseSession {
 }
 
 impl Session {
-    pub fn try_from_file(config_path: PathBuf) -> Result<Session, Box<dyn Error>> {
-        let conf = Ini::load_from_file(config_path)?;
-
-        let tidal_section = conf.section(Some("Tidal")).unwrap();
-        let token_type = tidal_section.get("token_type").unwrap();
-        let access_token = tidal_section.get("access_token").unwrap();
-
-        Session::init(format!("{} {}", token_type, access_token))
+    pub fn try_from_file(config: &Config) -> Result<Session, Box<dyn Error>> {
+        Session::init(format!("{} {}", config.tidal.token_type, config.tidal.access_token))
     }
     pub fn login_link() -> Result<DeviceAuthorization, Box<dyn Error>> {
         let client_id = "zU4XHVVkc2tDPo4t";
@@ -146,11 +137,9 @@ impl Session {
             });
         }
 
-        if res.status().is_client_error() {
-            info!("[Session] outdated, refresh needed");
-        }
+        info!("[Session] outdated, refresh needed {:?}", res);
 
-        panic!("Invalid session")
+        Err("Session is outdated".into())
     }
     pub fn check_internet_connection() -> bool {
         info!("Wait for internet connection to tidal... ");

@@ -1,11 +1,10 @@
-use std::{path::PathBuf, time::Duration};
-
+use std::time::Duration;
 use macroquad::prelude::*;
 
-use crate::session::{DeviceAuthorization, Session};
+use crate::{config::Config, session::{DeviceAuthorization, Session}};
 
 pub struct SessionGui {
-    config_path: PathBuf,
+    config: Config,
     internet_connection: bool,
     font: Font,
     session: Option<Session>,
@@ -13,12 +12,12 @@ pub struct SessionGui {
 }
 
 impl SessionGui {
-    pub fn init(config_path: PathBuf) -> SessionGui {
+    pub fn init(config: Config) -> SessionGui {
         Self { 
             session: None,
             device_auth: None,
             internet_connection: false,
-            config_path,
+            config,
             font: load_ttf_font_from_bytes(include_bytes!("../static/NotoSans_Condensed-SemiBold.ttf")).unwrap(),
         }
     }
@@ -27,14 +26,14 @@ impl SessionGui {
         if !self.internet_connection {
             self.internet_connection = Session::check_internet_connection();
         } else if self.device_auth.is_some() {
-            match self.device_auth.clone().unwrap().wait_for_link(self.config_path.clone()) {
+            match self.device_auth.clone().unwrap().wait_for_link(&mut self.config) {
                 Ok(session) => self.session = Some(session.clone()),
                 Err(_) => {
                     self.device_auth = Some(Session::login_link().unwrap());
                 },
             }
         } else if self.session.is_none() {
-            match Session::try_from_file(self.config_path.clone()) {
+            match Session::try_from_file(&self.config) {
                 Ok(session) => self.session = Some(session),
                 Err(_) => {
                     self.device_auth = Some(Session::login_link().unwrap());

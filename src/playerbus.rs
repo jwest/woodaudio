@@ -82,21 +82,15 @@ pub enum PlayerStateCase {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct TrackStateCover {
-    pub foreground: String,
-    pub background: String,
+    pub foreground: Option<String>,
+    pub background: Option<String>,
 }
 
 impl From<Cover> for TrackStateCover {
     fn from(cover: Cover) -> Self {
-        Self { foreground: cover.foreground, background: cover.background }
-    }
-}
-
-impl From<Option<Cover>> for TrackStateCover {
-    fn from(cover: Option<Cover>) -> Self {
         Self { 
-            foreground: cover.clone().map(|cover| cover.foreground).unwrap_or("../static/sample_cover.jpg-foreground.png".to_string()),
-            background: cover.clone().map(|cover| cover.background).unwrap_or("../static/sample_cover.jpg-background.png".to_string()),
+            foreground: cover.foreground,
+            background: cover.background,
         }
     }
 }
@@ -108,7 +102,7 @@ pub struct TrackState {
     pub title: String,
     pub artist_name: String,
     pub album_name: String,
-    pub cover: Option<TrackStateCover>,
+    pub cover: TrackStateCover,
     pub duration: Duration,
 }
 
@@ -119,7 +113,7 @@ impl From<BufferedTrack> for TrackState {
             title: buffered_track.track.title,
             artist_name: buffered_track.track.artist_name,
             album_name: buffered_track.track.album_name,
-            cover: buffered_track.cover.map(|c| Some(TrackStateCover::from(c))).unwrap_or_default(),
+            cover: TrackStateCover::from(buffered_track.cover),
             duration: buffered_track.track.duration,
         }
     }
@@ -132,7 +126,7 @@ impl From<Track> for TrackState {
             title: track.title,
             artist_name: track.artist_name,
             album_name: track.album_name,
-            cover: None,
+            cover: TrackStateCover::from(Cover::empty()),
             duration: track.duration,
         }
     }
