@@ -5,7 +5,7 @@ use image::io::Reader as ImageReader;
 use log::{debug, error, info};
 use reqwest::blocking::Client;
 use secular::normalized_lower_lay_string;
-use suppaftp::FtpStream;
+use suppaftp::{types::FileType, FtpStream};
 use tempfile::NamedTempFile;
 
 use crate::{config::{Config, ExporterFTPConfig}, playlist::{BufferedTrack, Cover, Track}, session::Session};
@@ -28,6 +28,8 @@ impl FtpStorage {
     fn init(config: ExporterFTPConfig) -> Self {
         let mut client = FtpStream::connect(config.server).unwrap();
         client.login(config.username, config.password).unwrap();
+        client.transfer_type(FileType::Binary).unwrap();
+        client.set_mode(suppaftp::Mode::ExtendedPassive);
 
         Self { client, cache_read: config.cache_read, output_path: config.share }
     }
