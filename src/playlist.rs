@@ -104,7 +104,7 @@ impl Playlist {
         }
     }
 
-    pub fn buffer_worker(&self, f: impl Fn(Track) -> BufferedTrack) {
+    pub fn buffer_worker(&self, f: impl Fn(Track) -> Option<BufferedTrack>) {
         loop {
             if self.buffered_receiver.len() > self.buffer_limit {
                 thread::sleep(Duration::from_secs(3));
@@ -116,14 +116,17 @@ impl Playlist {
                     let old_force_lock = self.force_lock.lock().unwrap().clone();
                     
                     info!("[Playlist worker] Buffer track: {:?}", track);
-                    let buffered_track = f(track.clone());
-
-                    let mut force_lock = self.force_lock.lock().unwrap();
-                    if old_force_lock == false && force_lock.eq(&true) {
-                        info!("[Playlist worker] force lock ignore trakc {:?}", track);
-                        *force_lock = false;
-                    } else {
-                        let _ = self.buffered_sender.send(buffered_track);
+                    match f(track.clone()) {
+                        Some(buffered_track) => {
+                            let mut force_lock = self.force_lock.lock().unwrap();
+                            if old_force_lock == false && force_lock.eq(&true) {
+                                info!("[Playlist worker] force lock ignore trakc {:?}", track);
+                                *force_lock = false;
+                            } else {
+                                let _ = self.buffered_sender.send(buffered_track);
+                            }
+                        },
+                        None => todo!(),
                     }
                 },
                 Err(_) => thread::sleep(Duration::from_secs(3)),

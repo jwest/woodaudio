@@ -1,5 +1,6 @@
 use env_logger::Target;
 use gui::Gui;
+use log::error;
 use macroquad::window::Conf;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::{thread, time::Duration};
@@ -73,8 +74,8 @@ fn downloader_module(downloader: Downloader, playlist: Playlist) {
     thread::spawn(move || {
         playlist.buffer_worker(|track| {
             match downloader.download_file(track) {
-                Ok(buffered_track) => buffered_track,
-                Err(err) => panic!("{:?}", err),
+                Ok(buffered_track) => Some(buffered_track),
+                Err(err) => { error!("[Downloader] download file error: {:?}", err); None },
             }
         });
     });
