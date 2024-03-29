@@ -23,7 +23,7 @@ impl Track {
             item["album"]["cover"].as_str().unwrap()
         } else { 
             "0dfd3368-3aa1-49a3-935f-10ffb39803c0" 
-        }.replace("-", "/");
+        }.replace('-', "/");
 
         let artist_name = item["artists"].as_array()
             .unwrap_or(&Vec::new())
@@ -120,13 +120,13 @@ impl Playlist {
 
             match self.receiver.recv() {
                 Ok(track) => {
-                    let old_force_lock = self.force_lock.lock().unwrap().clone();
+                    let old_force_lock = *self.force_lock.lock().unwrap();
                     
                     info!("[Playlist worker] Buffer track: {:?}", track);
                     match f(track.clone()) {
                         Some(buffered_track) => {
                             let mut force_lock = self.force_lock.lock().unwrap();
-                            if old_force_lock == false && force_lock.eq(&true) {
+                            if !old_force_lock && force_lock.eq(&true) {
                                 info!("[Playlist worker] force lock ignore trakc {:?}", track);
                                 *force_lock = false;
                             } else {
@@ -166,23 +166,25 @@ impl Playlist {
     pub fn push_force(&self, tracks: Vec<Track>) {
         debug!("[Playlist] Force push tracks: {:?}", tracks);
         
-        let _ = self.sender.lock().map(|sender| {
+        self.sender.lock().map(|sender| {
             let mut force_lock = self.force_lock.lock().unwrap();
             *force_lock = true;
 
             let mut existing_tracks: Vec<Track> = tracks;
     
-            loop {
+            let mut next_buffered_exist = true;
+            while next_buffered_exist {
                 match self.buffered_receiver.recv_timeout(Duration::from_millis(300)) {
                     Ok(buffered_track) => existing_tracks.push(buffered_track.track),
-                    Err(_) => break,
+                    Err(_) => next_buffered_exist = false,
                 }
             }
 
-            loop {
+            let mut next_exist = true;
+            while next_exist {
                 match self.receiver.recv_timeout(Duration::from_millis(300)) {
                     Ok(track) => existing_tracks.push(track),
-                    Err(_) => break,
+                    Err(_) => next_exist = false,
                 }
             }
 

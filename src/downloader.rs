@@ -72,7 +72,7 @@ impl CacheRead for FtpStorage {
         let mut reader = self.client.retr_as_stream(file_name.clone())?;
 
         let mut output = bytes::BytesMut::new();
-        reader.read(&mut output)?;
+        reader.read_exact(&mut output)?;
         drop(reader);
 
         if output.is_empty() {
@@ -188,7 +188,7 @@ impl Downloader {
                 let file = NamedTempFile::new()?;
                 let path = file.into_temp_path();
                 let image_str = path.keep()?.to_str().unwrap().to_string();
-                let _ = cover
+                cover
                     .resize(320, 320, image::imageops::FilterType::Nearest)
                     .save_with_format(&image_str, image::ImageFormat::Png)
                     .unwrap();
@@ -204,7 +204,7 @@ impl Downloader {
                 let background_path = background_file.into_temp_path();
                 let background_path_str = background_path.keep()?.to_str().unwrap().to_string();
                 
-                let _ = background
+                background
                     .brighten(-75)
                     .resize(1024, 1024, image::imageops::FilterType::Nearest)
                     .blur(10.0)

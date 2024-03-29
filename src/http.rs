@@ -22,7 +22,7 @@ pub fn server(player_bus: PlayerBus) {
 
                     let result: Value = serde_json::from_str(&content).expect("Json required in body");
                     let tidal_url = result["url"].as_str().expect("Json required url string field");
-                    let id = tidal_url.split("/").last().unwrap();
+                    let id = tidal_url.split('/').last().unwrap();
 
                     if tidal_url.starts_with("https://tidal.com/track/") {
                         player_bus.publish_message(playerbus::Message::UserPlayTrack(id.to_string()));

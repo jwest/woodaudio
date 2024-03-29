@@ -98,7 +98,7 @@ fn player_module(playlist: Playlist, player_bus: PlayerBus) {
     thread::Builder::new()
         .name("Player module".to_owned())
         .spawn_with_priority(ThreadPriority::Max, |_| {
-            let _ = player::player(playlist, player_bus);
+            player::player(playlist, player_bus);
     }).unwrap();
 }
 

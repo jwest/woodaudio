@@ -81,7 +81,7 @@ impl DeviceAuthorization {
                 config.tidal.refresh_token = session_response.refresh_token;
                 config.save();
 
-                return Session::try_from_file(&config)
+                return Session::try_from_file(config)
             }
         }
 

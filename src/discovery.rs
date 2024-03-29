@@ -37,7 +37,7 @@ impl DiscoveryQueue {
 fn shuffle_vec(items: Vec<Value>) -> Vec<Value> {
     let mut rng_items = thread_rng();
     let mut items_clone = items.clone();
-    (&mut items_clone).shuffle(&mut rng_items);
+    items_clone.shuffle(&mut rng_items);
     items_clone
 }
 

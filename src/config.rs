@@ -17,10 +17,7 @@ impl ParseIni for Option<&Properties> {
         self.map(|properties| properties.get(name)).flatten().unwrap_or(default).to_string()   
     }
     fn get_bool(&self, name: &str) -> bool {
-        match self.get_string(name).as_str() {
-            "true" => true,
-            _ => false,
-        }
+        matches!(self.get_string(name).as_str(), "true")
     }
     fn get_bool_with_default(&self, name: &str, default: bool) -> bool {
         match self.get_string(name).as_str() {
@@ -134,10 +131,10 @@ impl Config {
         Self::init(config_path)
     }
     pub fn init(path: PathBuf) -> Self {
-        let conf = Ini::load_from_file(path.clone()).unwrap_or(Ini::new());
+        let conf = Ini::load_from_file(path.clone()).unwrap_or_default();
 
         Self { 
-            path: path,
+            path,
             tidal: TidalConfig::init(&conf),
             gui: GuiConfig::init(&conf), 
             exporter_ftp: ExporterFTPConfig::init(&conf),

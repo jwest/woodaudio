@@ -22,7 +22,7 @@ fn source(track: BufferedTrack) -> Option<Decoder<BufReader<std::io::Cursor<byte
         Ok(file) => Some(file),
         Err(err) => {
             error!("[Player] Audio file '{:?}' decode error, try next...", err);
-            return None
+            None
         },
     }
 }

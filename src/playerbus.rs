@@ -247,7 +247,7 @@ impl PlayerBus {
     }
 
     pub fn publish_command(&self, command: Command) {
-        let _ = self.broadcast.send(command);
+        self.broadcast.send(command);
     }
 
     pub fn read_state(&self) -> State {
