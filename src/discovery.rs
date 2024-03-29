@@ -76,7 +76,7 @@ impl DiscoveryStore  {
             
             for item in shuffled_items {
                 if item["item"]["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                    self.queue.push(DiscoverablePriority::Low, Track::build_from_json(item["item"].to_owned()));
+                    self.queue.push(DiscoverablePriority::Low, Track::build_from_json(item["item"].clone()));
                 }
             }
         }
@@ -88,7 +88,7 @@ impl DiscoveryStore  {
         let v = self.session.get_page_for_you()?;
         let mixes = parse_modules(v)?;
 
-        shuffle_vec(
+        for track in &shuffle_vec(
             shuffle_vec(mixes).iter()
                 .filter(|mix| mix["mixType"].is_string())
                 .map(|mix| self.session.get_mix(mix["id"].as_str().unwrap()).unwrap())
@@ -96,10 +96,9 @@ impl DiscoveryStore  {
                 .flat_map(|mix_tracks| shuffle_vec(mix_tracks.clone()))
                 .filter(|mix_track| mix_track["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready))
                 .collect()
-        ).iter()
-            .for_each(|track| {
+        ) {
                 self.queue.push(DiscoverablePriority::Low, Track::build_from_json(track.clone()));
-            });
+            }
 
         Ok(())
     }

@@ -45,7 +45,7 @@ impl Track {
     pub fn duration_formated(&self) -> String {
         let seconds = self.duration.as_secs() % 60;
         let minutes = (self.duration.as_secs() / 60) % 60;
-        format!("{}:{:0>2}", minutes, seconds)
+        format!("{minutes}:{seconds:0>2}")
     }
 
     pub fn full_name(&self) -> String {
@@ -146,8 +146,7 @@ impl Playlist {
     pub fn push(&self, tracks: Vec<Track>) {
         debug!("[Playlist] Push tracks: {:?}", tracks);
         let _ = self.sender.lock().map(|sender| {
-            tracks.iter()
-                .for_each(|t| { let _ = sender.send(t.clone()); });
+            for t in &tracks { let _ = sender.send(t.clone()); }
         });
     }
 
@@ -188,8 +187,7 @@ impl Playlist {
                 }
             }
 
-            existing_tracks.iter()
-                .for_each(|track| { let _ = sender.send(track.clone()); });
+            for track in &existing_tracks { let _ = sender.send(track.clone()); }
 
             debug!("[Playlist] playlist after push force: {:?}", existing_tracks);
         }).unwrap();

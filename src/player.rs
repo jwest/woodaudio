@@ -16,7 +16,7 @@ fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
 }
 
 fn source(track: BufferedTrack) -> Option<Decoder<BufReader<std::io::Cursor<bytes::Bytes>>>> {
-    let source_result = Decoder::new_flac(BufReader::with_capacity(4194304, Cursor::new(track.stream)));
+    let source_result = Decoder::new_flac(BufReader::with_capacity(4_194_304, Cursor::new(track.stream)));
 
     match source_result {
         Ok(file) => Some(file),
@@ -27,7 +27,7 @@ fn source(track: BufferedTrack) -> Option<Decoder<BufReader<std::io::Cursor<byte
     }
 }
 
-pub fn player(playlist: Playlist, mut player_bus: PlayerBus) {
+pub fn player(playlist: &Playlist, mut player_bus: PlayerBus) {
     let command_channel = player_bus.register_command_channel(vec![Command::Play.as_string(), Command::Pause.as_string(), Command::Next.as_string()]);
 
     let (_stream, stream_handle) = retry(OutputStream::try_default);
@@ -39,51 +39,45 @@ pub fn player(playlist: Playlist, mut player_bus: PlayerBus) {
     sink.play();
 
     loop {
-        match sink.empty() {
-            true => {
-                match playlist.pop() {
-                    Some(track) => {  
-                        let source = source(track.clone());
-                        if source.is_some() {
-                            playing_time = Some(Duration::ZERO);
-                            player_bus.publish_message(Message::PlayerPlayingNewTrack(track));
-                            
-                            sink.append(source.unwrap());
-                            sink.play();
-                        }
-                    }
-                    None => {
-                        playing_time = None;
-                        player_bus.publish_message(Message::PlayerQueueIsEmpty);
-                        
-                        thread::sleep(Duration::from_millis(200));
-                    }
+        if sink.empty() {
+            if let Some(track) = playlist.pop() {
+                let source = source(track.clone());
+                if source.is_some() {
+                    playing_time = Some(Duration::ZERO);
+                    player_bus.publish_message(Message::PlayerPlayingNewTrack(track));
+                    
+                    sink.append(source.unwrap());
+                    sink.play();
                 }
-            },
-            false => {
-                match command_channel.read_command() {
-                    Some(Command::Play) => {
-                        sink.play();
-                        player_bus.publish_message(Message::PlayerPlaying);
-                    },
-                    Some(Command::Pause) => {
-                        sink.pause();
-                        player_bus.publish_message(Message::PlayerToPause);
-                    },
-                    Some(Command::Next) => {
-                        sink.clear();
-                    },
-                    _ => {},
-                };
+            } else {
+                playing_time = None;
+                player_bus.publish_message(Message::PlayerQueueIsEmpty);
+                
+                thread::sleep(Duration::from_millis(200));
+            }
+        } else {
+            match command_channel.read_command() {
+                Some(Command::Play) => {
+                    sink.play();
+                    player_bus.publish_message(Message::PlayerPlaying);
+                },
+                Some(Command::Pause) => {
+                    sink.pause();
+                    player_bus.publish_message(Message::PlayerToPause);
+                },
+                Some(Command::Next) => {
+                    sink.clear();
+                },
+                _ => {},
+            };
 
-                thread::sleep(Duration::from_millis(50));
+            thread::sleep(Duration::from_millis(50));
 
-                if !sink.is_paused() {
-                    debug!("[Player] playing time: {:?}, ({:?})", playing_time, last_iteration_datetime);
-                    player_bus.publish_message(Message::PlayerElapsed(playing_time.unwrap_or(Duration::ZERO)));
-                    playing_time = Some(playing_time.unwrap_or(Duration::ZERO) + (Instant::now() - last_iteration_datetime));
-                }
-            },
+            if !sink.is_paused() {
+                debug!("[Player] playing time: {:?}, ({:?})", playing_time, last_iteration_datetime);
+                player_bus.publish_message(Message::PlayerElapsed(playing_time.unwrap_or(Duration::ZERO)));
+                playing_time = Some(playing_time.unwrap_or(Duration::ZERO) + last_iteration_datetime.elapsed());
+            }
         }
         last_iteration_datetime = Instant::now();
     }

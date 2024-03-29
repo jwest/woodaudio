@@ -4,7 +4,7 @@ use tiny_http::{Response, Server};
 
 use crate::playerbus::{self, PlayerBus};
 
-pub fn server(player_bus: PlayerBus) {
+pub fn server(player_bus: &PlayerBus) {
     let server = Server::http("0.0.0.0:8001").unwrap();
 
     for mut request in server.incoming_requests() {

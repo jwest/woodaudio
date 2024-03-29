@@ -29,21 +29,18 @@ impl ParseIni for Option<&Properties> {
 }
 
 fn bool_to_string(value: bool) -> String {
-    match value {
-        true => "true",
-        false => "false",
-    }.to_string()
+    if value { "true".to_string() } else { "false".to_string() }
 }
 
 #[derive(Debug)]
 #[derive(Clone)]
-pub struct TidalConfig {
+pub struct Tidal {
     pub token_type: String,
     pub access_token: String,
     pub refresh_token: String,
 }
 
-impl TidalConfig {
+impl Tidal {
     fn init(conf: &Ini) -> Self {
         let properties = conf.section(Some("Tidal"));
         Self {
@@ -62,12 +59,12 @@ impl TidalConfig {
 
 #[derive(Debug)]
 #[derive(Clone)]
-pub struct GuiConfig {
+pub struct Gui {
     pub display_cover_background: bool,
     pub display_cover_foreground: bool,
 }
 
-impl GuiConfig {
+impl Gui {
     fn init(conf: &Ini) -> Self {
         let properties = conf.section(Some("GUI"));
         Self {
@@ -84,7 +81,7 @@ impl GuiConfig {
 
 #[derive(Debug)]
 #[derive(Clone)]
-pub struct ExporterFTPConfig {
+pub struct ExporterFTP {
     pub enabled: bool,
     pub server: String,
     pub share: String,
@@ -93,7 +90,7 @@ pub struct ExporterFTPConfig {
     pub cache_read: bool,
 }
 
-impl ExporterFTPConfig {
+impl ExporterFTP {
     fn init(conf: &Ini) -> Self {
         let properties = conf.section(Some("ExporterFTP"));
         Self {
@@ -120,9 +117,9 @@ impl ExporterFTPConfig {
 #[derive(Clone)]
 pub struct Config {
     path: PathBuf,
-    pub tidal: TidalConfig,
-    pub gui: GuiConfig,
-    pub exporter_ftp: ExporterFTPConfig,
+    pub tidal: Tidal,
+    pub gui: Gui,
+    pub exporter_ftp: ExporterFTP,
 }
 
 impl Config {
@@ -135,9 +132,9 @@ impl Config {
 
         Self { 
             path,
-            tidal: TidalConfig::init(&conf),
-            gui: GuiConfig::init(&conf), 
-            exporter_ftp: ExporterFTPConfig::init(&conf),
+            tidal: Tidal::init(&conf),
+            gui: Gui::init(&conf), 
+            exporter_ftp: ExporterFTP::init(&conf),
         }
     }
     pub fn save(&self) {

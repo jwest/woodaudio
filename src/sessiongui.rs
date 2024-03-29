@@ -22,7 +22,7 @@ impl SessionGui {
         }
     }
 
-    pub async fn update_state(&mut self) {
+    pub fn update_state(&mut self) {
         if !self.internet_connection {
             self.internet_connection = Session::check_internet_connection();
         } else if self.device_auth.is_some() {
@@ -50,12 +50,12 @@ impl SessionGui {
                 return self.session.clone().unwrap();
             }
             
-            let link = self.device_auth.clone().map(|d| d.format_url()).unwrap_or("Loading...".to_string());
+            let link = self.device_auth.clone().map_or("Loading...".to_string(), |d| d.format_url());
             self.render_text(link);
     
             next_frame().await;
 
-            self.update_state().await;
+            self.update_state();
             std::thread::sleep(Duration::from_millis(50));
         }
     }

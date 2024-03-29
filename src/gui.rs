@@ -353,7 +353,7 @@ impl Gui {
     fn duration_formated(duration: &Duration) -> String {
         let seconds = duration.as_secs() % 60;
         let minutes = (duration.as_secs() / 60) % 60;
-        format!("{}:{:0>2}", minutes, seconds)
+        format!("{minutes}:{seconds:0>2}")
     }
 
     async fn update_state(&mut self) {
@@ -408,7 +408,7 @@ impl Gui {
         let time_duration_actual = self.state.player.playing_time.unwrap();
         let seconds = time_duration_actual.as_secs() % 60;
         let minutes = (time_duration_actual.as_secs() / 60) % 60;
-        let time_text_actual = format!("{}:{:0>2}", minutes, seconds);
+        let time_text_actual = format!("{minutes}:{seconds:0>2}");
 
         let time_text_end = Self::duration_formated(&self.state.track.clone().unwrap().duration);
         let time_text_font_size = 16;

@@ -89,16 +89,16 @@ fn downloader_module(session: Session, config: Config, playlist: Playlist) {
 fn server_module(player_bus: PlayerBus) {
     thread::Builder::new()
         .name("Server module".to_owned())
-        .spawn_with_priority(ThreadPriority::Min, |_| {
-            http::server(player_bus);
+        .spawn_with_priority(ThreadPriority::Min, move |_| {
+            http::server(&player_bus);
     }).unwrap();
 }
 
 fn player_module(playlist: Playlist, player_bus: PlayerBus) {
     thread::Builder::new()
         .name("Player module".to_owned())
-        .spawn_with_priority(ThreadPriority::Max, |_| {
-            player::player(playlist, player_bus);
+        .spawn_with_priority(ThreadPriority::Max, move |_| {
+            player::player(&playlist, player_bus);
     }).unwrap();
 }
 
@@ -108,6 +108,7 @@ fn conf() -> Conf {
       fullscreen: true,
       window_height: 600,
       window_width: 1024,
+      window_resizable: false,
       ..Default::default()
     }
 }

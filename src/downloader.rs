@@ -8,7 +8,7 @@ use secular::normalized_lower_lay_string;
 use suppaftp::{types::FileType, FtpStream};
 use tempfile::NamedTempFile;
 
-use crate::{config::{Config, ExporterFTPConfig}, playlist::{BufferedTrack, Cover, Track}, session::Session};
+use crate::{config::{Config, ExporterFTP}, playlist::{BufferedTrack, Cover, Track}, session::Session};
 
 trait CacheRead {
     fn read_file(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<bytes::Bytes>, Box<dyn Error>>;
@@ -25,7 +25,7 @@ struct FtpStorage {
 }
 
 impl FtpStorage {
-    fn init(config: ExporterFTPConfig) -> Self {
+    fn init(config: ExporterFTP) -> Self {
         let mut client = FtpStream::connect(config.server).unwrap();
         client.login(config.username, config.password).unwrap();
         client.transfer_type(FileType::Binary).unwrap();
@@ -33,17 +33,19 @@ impl FtpStorage {
 
         Self { client, cache_read: config.cache_read, output_path: config.share }
     }
+    fn file_name_with_create_dir(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<String, Box<dyn Error>> {
+        if let Some(dir) = output_dir {
+            self.client.mkdir(dir)?;
+            Ok(format!("/{dir}/{output_file_name}"))
+        } else { 
+            Ok(format!("{}{}", self.output_path, output_file_name))
+        }
+    }
 }
 
 impl Exporter for FtpStorage {
     fn write_file(&mut self, source: bytes::Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
-        let file_name = match output_dir {
-            Some(dir) => {
-                self.client.mkdir(dir)?;
-                format!("/{}/{}", dir, output_file_name)
-            },
-            None => format!("{}{}", self.output_path, output_file_name),
-        };
+        let file_name = self.file_name_with_create_dir(output_file_name, output_dir)?;
 
         self.client.put_file(
             file_name.clone(),
@@ -61,14 +63,7 @@ impl CacheRead for FtpStorage {
             return Ok(None);
         }
 
-        let file_name = match output_dir {
-            Some(dir) => {
-                self.client.mkdir(dir)?;
-                format!("/{}/{}", dir, output_file_name)
-            },
-            None => format!("{}{}", self.output_path, output_file_name),
-        };
-
+        let file_name = self.file_name_with_create_dir(output_file_name, output_dir)?;
         let mut reader = self.client.retr_as_stream(file_name.clone())?;
 
         let mut output = bytes::BytesMut::new();
@@ -148,7 +143,7 @@ impl Downloader {
             if let Some(ftp_storage) = self.storage.lock().unwrap().as_mut() {
                 let export_bytes = bytes_response.clone();
                 match ftp_storage.write_file(export_bytes, &track.file_name(), None) {
-                    Ok(_) => {
+                    Ok(()) => {
                         info!("[Storage] cache file wrote, track: {:?}", track);
                     },
                     Err(err) => {
