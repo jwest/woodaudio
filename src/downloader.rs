@@ -94,7 +94,7 @@ impl Track {
 }
 
 impl Downloader {
-    pub fn init(session: Session, config: &Config) -> Self {
+    pub fn init(session: &Session, config: &Config) -> Self {
         let storage = match config.exporter_ftp.enabled {
             true => Some(FtpStorage::init(config.exporter_ftp.clone())),
             false => None,
@@ -102,7 +102,7 @@ impl Downloader {
 
         Downloader { 
             storage: Arc::new(Mutex::new(storage)),
-            session, 
+            session: session.clone(), 
             display_cover_background: config.gui.display_cover_background, 
             display_cover_foreground: config.gui.display_cover_foreground,
         }

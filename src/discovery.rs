@@ -54,20 +54,18 @@ fn parse_modules(value: Value) -> Result<Vec<Value>, Box<dyn Error>> {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct DiscoveryStore {
-    session: Session, 
     queue: DiscoveryQueue,
 }
 
 impl DiscoveryStore  {
-    pub fn new(session: Session, playlist: Playlist) -> Self {
+    pub fn new(playlist: Playlist) -> Self {
         DiscoveryStore {
-            session,
             queue: DiscoveryQueue { playlist },
         }
     }
 
-    pub fn discover_favorities_tracks(&self) -> Result<(), Box<dyn Error>> {
-        let v = self.session.get_favorites()?;
+    pub fn discover_favorities_tracks(&self, session: &Session) -> Result<(), Box<dyn Error>> {
+        let v = session.get_favorites()?;
 
         if let serde_json::Value::Array(items) = &v["items"] {
             let mut rng = thread_rng();
@@ -84,14 +82,14 @@ impl DiscoveryStore  {
         Ok(())
     }
 
-    pub fn discover_mixes(&self) -> Result<(), Box<dyn Error>> {
-        let v = self.session.get_page_for_you()?;
+    pub fn discover_mixes(&self, session: &Session) -> Result<(), Box<dyn Error>> {
+        let v = session.get_page_for_you()?;
         let mixes = parse_modules(v)?;
 
         for track in &shuffle_vec(
             shuffle_vec(mixes).iter()
                 .filter(|mix| mix["mixType"].is_string())
-                .map(|mix| self.session.get_mix(mix["id"].as_str().unwrap()).unwrap())
+                .map(|mix| session.get_mix(mix["id"].as_str().unwrap()).unwrap())
                 .map(|mix| parse_modules(mix).unwrap())
                 .flat_map(|mix_tracks| shuffle_vec(mix_tracks.clone()))
                 .filter(|mix_track| mix_track["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready))
@@ -103,9 +101,9 @@ impl DiscoveryStore  {
         Ok(())
     }
 
-    pub fn discovery_radio(&self, track_id: &str) -> Result<(), Box<dyn Error>> {
+    pub fn discovery_radio(&self, session: &Session, track_id: &str) -> Result<(), Box<dyn Error>> {
         info!("[Discovery] Discover radio for track: {}", track_id);
-        let radio = self.session.get_track_radio(track_id).unwrap();
+        let radio = session.get_track_radio(track_id).unwrap();
         let mut tracks: Vec<Track> = vec![];
 
         if let serde_json::Value::Array(items) = &radio["items"] {
@@ -123,12 +121,12 @@ impl DiscoveryStore  {
         Ok(())
     }
 
-    pub fn discovery_track(&self, track_id: &str) -> Result<(), Box<dyn Error>> {
-        self.discovery_radio(track_id)
+    pub fn discovery_track(&self, session: &Session, track_id: &str) -> Result<(), Box<dyn Error>> {
+        self.discovery_radio(session, track_id)
     }
 
-    pub fn discovery_album(&self, album_id: &str) -> Result<(), Box<dyn Error>> {
-        let album = self.session.get_album(album_id).unwrap();
+    pub fn discovery_album(&self, session: &Session, album_id: &str) -> Result<(), Box<dyn Error>> {
+        let album = session.get_album(album_id).unwrap();
         let mut tracks: Vec<Track> = vec![];
 
         if let serde_json::Value::Array(items) = &album["items"] {
@@ -146,8 +144,8 @@ impl DiscoveryStore  {
         Ok(())
     }
 
-    pub fn discovery_artist(&self, artist_id: &str) -> Result<(), Box<dyn Error>> {
-        let artist = self.session.get_artist(artist_id).unwrap();
+    pub fn discovery_artist(&self, session: &Session, artist_id: &str) -> Result<(), Box<dyn Error>> {
+        let artist = session.get_artist(artist_id).unwrap();
         let mut tracks: Vec<Track> = vec![];
 
         if let serde_json::Value::Array(items) = &artist["items"] {

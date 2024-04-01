@@ -1,12 +1,12 @@
-use std::time::Duration;
 use macroquad::prelude::*;
 
-use crate::{config::Config, session::{DeviceAuthorization, Session}};
+use crate::{config::Config, playerbus::{Message::SessionUpdated, State}, session::{DeviceAuthorization, Session}};
+
+use super::Screen;
 
 pub struct SessionGui {
     config: Config,
     internet_connection: bool,
-    font: Font,
     session: Option<Session>,
     device_auth: Option<DeviceAuthorization>,
 }
@@ -18,11 +18,16 @@ impl SessionGui {
             device_auth: None,
             internet_connection: false,
             config,
-            font: load_ttf_font_from_bytes(include_bytes!("../static/NotoSans_Condensed-SemiBold.ttf")).unwrap(),
         }
     }
 
-    pub fn update_state(&mut self) {
+    fn render_text(&self, text: String, ui: &super::Gui) {
+        draw_text_ex(text.as_str(), 96.0, 96.0,  TextParams { font_size: 32, font: Some(&ui.fonts.title), color: WHITE, ..Default::default() },);
+    }
+}
+
+impl Screen for SessionGui {
+    fn update(&mut self, _: State) {
         if !self.internet_connection {
             self.internet_connection = Session::check_internet_connection();
         } else if self.device_auth.is_some() {
@@ -41,26 +46,18 @@ impl SessionGui {
             }
         }
     }
-    
-    pub async fn gui_loop(&mut self) -> Session {
-        loop {
-            clear_background(BLACK);
 
-            if self.session.is_some() {
-                return self.session.clone().unwrap();
-            }
-            
-            let link = self.device_auth.clone().map_or("Loading...".to_string(), |d| d.format_url());
-            self.render_text(link);
-    
-            next_frame().await;
-
-            self.update_state();
-            std::thread::sleep(Duration::from_millis(50));
+    fn render(&self, ui: &super::Gui) {
+        if self.session.is_some() {
+            ui.player_bus.publish_message(SessionUpdated(self.session.clone().unwrap()));
+            return;
         }
+        
+        let link = self.device_auth.clone().map_or("Loading...".to_string(), |d| d.format_url());
+        self.render_text(link, ui);
     }
-
-    fn render_text(&self, text: String) {
-        draw_text_ex(text.as_str(), 96.0, 96.0,  TextParams { font_size: 32, font: Some(&self.font), color: WHITE, ..Default::default() },);
+    
+    fn nav_id(&self) -> String {
+        "/session".to_string()
     }
 }

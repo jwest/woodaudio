@@ -4,7 +4,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use log::{debug, info};
 
-use crate::playlist::{BufferedTrack, Cover, Track};
+use crate::{playlist::{BufferedTrack, Cover, Track}, session::Session};
 
 
 #[derive(Debug)]
@@ -18,6 +18,7 @@ pub enum Command {
     PlayTrackForce(String),
     PlayAlbumForce(String),
     PlayArtistForce(String),
+    ShowScreen(String),
 }
 
 impl Command {
@@ -31,6 +32,7 @@ impl Command {
             Command::PlayTrackForce(_) => "PlayTrackForce".to_owned(),
             Command::PlayAlbumForce(_) => "PlayAlbumForce".to_owned(),
             Command::PlayArtistForce(_) => "PlayArtistForce".to_owned(),
+            Command::ShowScreen(_) => "ShowScreen".to_owned(),
         }
     }
 }
@@ -55,6 +57,11 @@ pub enum Message {
     UserPlayTrack(String),
     UserPlayAlbum(String),
     UserPlayArtist(String),
+
+    UserClickActions(),
+    UserClickBackToPlayer(),
+
+    SessionUpdated(Session),
 }
 
 #[derive(Debug)]
@@ -62,6 +69,7 @@ pub enum Message {
 pub struct State {
     pub player: PlayerState,
     pub track: Option<TrackState>,
+    pub session: Option<Session>,
 }
 
 #[derive(Debug)]
@@ -205,6 +213,7 @@ impl State {
                 playing_time: None,
             },
             track: None,
+            session: None,
         }
     }
 }
@@ -222,11 +231,11 @@ impl PlayerBus {
 
         let prev_state = state.clone();
         let next_state = match message {
-            Message::PlayerPlayingNewTrack(track) => State { track: Some(TrackState::from(track)), player: PlayerState { case: PlayerStateCase::Playing, playing_time: Some(Duration::ZERO) } },
-            Message::PlayerPlaying => State { track: prev_state.track, player: PlayerState { case: PlayerStateCase::Playing, playing_time: prev_state.player.playing_time } },
-            Message::PlayerToPause => State { track: prev_state.track, player: PlayerState { case: PlayerStateCase::Paused, playing_time: prev_state.player.playing_time } },
-            Message::PlayerElapsed(duration) => State { track: prev_state.track, player: PlayerState { case: prev_state.player.case, playing_time: Some(duration) } },
-            Message::PlayerQueueIsEmpty => State { track: None, player: PlayerState { case: PlayerStateCase::Loading, playing_time: None } },
+            Message::PlayerPlayingNewTrack(track) => State { track: Some(TrackState::from(track)), player: PlayerState { case: PlayerStateCase::Playing, playing_time: Some(Duration::ZERO) }, ..prev_state },
+            Message::PlayerPlaying => State { player: PlayerState { case: PlayerStateCase::Playing, ..prev_state.player }, ..prev_state },
+            Message::PlayerToPause => State { player: PlayerState { case: PlayerStateCase::Paused, ..prev_state.player }, ..prev_state },
+            Message::PlayerElapsed(duration) => State { player: PlayerState { case: prev_state.player.case, playing_time: Some(duration) }, ..prev_state },
+            Message::PlayerQueueIsEmpty => State { track: None, player: PlayerState { case: PlayerStateCase::Loading, playing_time: None }, ..prev_state },
             Message::UserPlay => { self.publish_command(Command::Play); prev_state },
             Message::UserPause => { self.publish_command(Command::Pause); prev_state },
             Message::UserPlayNext => { self.publish_command(Command::Next); prev_state },
@@ -237,6 +246,9 @@ impl PlayerBus {
             Message::UserPlayArtist(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayArtistForce(track)); prev_state },
             Message::TrackAddedToFavorites => { prev_state },
             Message::ForcePlay => { self.publish_command(Command::Next); prev_state },
+            Message::UserClickActions() => { self.publish_command(Command::ShowScreen("/actions".to_string())); prev_state },
+            Message::UserClickBackToPlayer() => { self.publish_command(Command::ShowScreen("/player".to_string())); prev_state },
+            Message::SessionUpdated(session) => { self.publish_command(Command::ShowScreen("/player".to_string())); State { session: Some(session), ..prev_state } }
         };
 
         *state = next_state;
@@ -252,5 +264,14 @@ impl PlayerBus {
 
     pub fn read_state(&self) -> State {
         self.state.lock().unwrap().clone()
+    }
+
+    pub fn wait_for_session(&self) -> Session {
+        loop {
+            let state = self.state.lock().unwrap();
+            if state.session.is_some() {
+                return state.session.clone().unwrap();
+            }
+        }
     }
 }

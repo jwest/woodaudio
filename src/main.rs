@@ -12,10 +12,6 @@ mod playlist;
 use playlist::Playlist;
 
 mod session;
-use session::Session;
-
-mod sessiongui;
-use sessiongui::SessionGui;
 
 mod discovery;
 use discovery::DiscoveryStore;
@@ -30,28 +26,29 @@ mod player;
 mod gui;
 mod http;
 
-fn service_module(discovery_store: DiscoveryStore, mut player_bus: PlayerBus, session: Session) {
+fn service_module(mut player_bus: PlayerBus, discovery_store: DiscoveryStore) {
     thread::spawn(move || {
         let channel = player_bus.register_command_channel(vec!["Radio".to_string(), "PlayTrackForce".to_string(), "PlayAlbumForce".to_string(), "PlayArtistForce".to_string(), "Like".to_string()]);
+        let session = player_bus.wait_for_session();
 
         loop {
             let command = channel.read_command();
 
             match command {
                 Some(playerbus::Command::Radio(track_id)) => {
-                    let _ = discovery_store.discovery_radio(&track_id);
+                    let _ = discovery_store.discovery_radio(&session, &track_id);
                     player_bus.publish_message(playerbus::Message::ForcePlay);
                 },
                 Some(playerbus::Command::PlayTrackForce(track_id)) => {
-                    let _ = discovery_store.discovery_track(&track_id);
+                    let _ = discovery_store.discovery_track(&session, &track_id);
                     player_bus.publish_message(playerbus::Message::ForcePlay);
                 },
                 Some(playerbus::Command::PlayAlbumForce(track_id)) => {
-                    let _ = discovery_store.discovery_album(&track_id);
+                    let _ = discovery_store.discovery_album(&session, &track_id);
                     player_bus.publish_message(playerbus::Message::ForcePlay);
                 },
                 Some(playerbus::Command::PlayArtistForce(track_id)) => {
-                    let _ = discovery_store.discovery_artist(&track_id);
+                    let _ = discovery_store.discovery_artist(&session, &track_id);
                     player_bus.publish_message(playerbus::Message::ForcePlay);
                 },
                 Some(playerbus::Command::Like(track_id)) => {
@@ -66,16 +63,18 @@ fn service_module(discovery_store: DiscoveryStore, mut player_bus: PlayerBus, se
     });
 }
 
-fn discovery_module(discovery_store: DiscoveryStore) {
+fn discovery_module(player_bus: PlayerBus, discovery_store: DiscoveryStore) {
     thread::spawn(move || {
-        let _ = discovery_store.discover_mixes();
-        let _ = discovery_store.discover_favorities_tracks();
+        let session = player_bus.wait_for_session();
+        let _ = discovery_store.discover_mixes(&session);
+        let _ = discovery_store.discover_favorities_tracks(&session);
     });
 }
 
-fn downloader_module(session: Session, config: Config, playlist: Playlist) {
+fn downloader_module(player_bus: PlayerBus, config: Config, playlist: Playlist) {
     thread::spawn(move || {
-        let downloader = Downloader::init(session, &config);
+        let session = player_bus.wait_for_session();
+        let downloader = Downloader::init(&session, &config);
 
         playlist.buffer_worker(|track| {
             match downloader.download_file(track) {
@@ -102,6 +101,12 @@ fn player_module(playlist: Playlist, player_bus: PlayerBus) {
     }).unwrap();
 }
 
+async fn gui_module(player_bus: PlayerBus, config: Config) {
+    Gui::init(player_bus.clone(), config)
+        .gui_loop()
+        .await;
+}
+
 fn conf() -> Conf {
     Conf {
       window_title: "Woodaudio".to_string(),
@@ -113,28 +118,23 @@ fn conf() -> Conf {
     }
 }
 
-#[macroquad::main(conf)]
-async fn main() {
+fn main() {
     env_logger::Builder::from_default_env()
         .target(Target::Stdout)
         .filter_level(log::LevelFilter::Info)
         .init();
 
     let config = Config::init_default_path();
-    
-    let session = SessionGui::init(config.clone()).gui_loop().await;
-
     let playlist = Playlist::new();
     let player_bus = PlayerBus::new();
-    let discovery_store = DiscoveryStore::new(session.clone(), playlist.clone());
+
+    let discovery_store = DiscoveryStore::new(playlist.clone());
+    discovery_module(player_bus.clone(), discovery_store.clone());
+    service_module(player_bus.clone(), discovery_store.clone());
+    downloader_module(player_bus.clone(), config.clone(), playlist.clone());
     
-    discovery_module(discovery_store.clone());
-    service_module(discovery_store.clone(), player_bus.clone(), session.clone());
     server_module(player_bus.clone());
-    downloader_module(session.clone(), config.clone(), playlist.clone());
     player_module(playlist.clone(), player_bus.clone());
 
-    Gui::init(player_bus.clone())
-        .gui_loop()
-        .await;
+    macroquad::Window::from_config(conf(), gui_module(player_bus.clone(), config));
 }
