@@ -2,8 +2,9 @@ use env_logger::Target;
 use gui::Gui;
 use log::error;
 use macroquad::window::Conf;
+use session::Session;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
-use std::{thread, time::Duration};
+use std::thread::{self, JoinHandle};
 
 mod playerbus;
 use playerbus::PlayerBus;
@@ -26,40 +27,15 @@ mod player;
 mod gui;
 mod http;
 
-fn service_module(mut player_bus: PlayerBus, discovery_store: DiscoveryStore) {
+fn session_module(config: Config, player_bus: PlayerBus) {
     thread::spawn(move || {
-        let channel = player_bus.register_command_channel(vec!["Radio".to_string(), "PlayTrackForce".to_string(), "PlayAlbumForce".to_string(), "PlayArtistForce".to_string(), "Like".to_string()]);
-        let session = player_bus.wait_for_session();
+        Session::setup(&mut config.clone(), player_bus);
+    });
+}
 
-        loop {
-            let command = channel.read_command();
-
-            match command {
-                Some(playerbus::Command::Radio(track_id)) => {
-                    let _ = discovery_store.discovery_radio(&session, &track_id);
-                    player_bus.publish_message(playerbus::Message::ForcePlay);
-                },
-                Some(playerbus::Command::PlayTrackForce(track_id)) => {
-                    let _ = discovery_store.discovery_track(&session, &track_id);
-                    player_bus.publish_message(playerbus::Message::ForcePlay);
-                },
-                Some(playerbus::Command::PlayAlbumForce(track_id)) => {
-                    let _ = discovery_store.discovery_album(&session, &track_id);
-                    player_bus.publish_message(playerbus::Message::ForcePlay);
-                },
-                Some(playerbus::Command::PlayArtistForce(track_id)) => {
-                    let _ = discovery_store.discovery_artist(&session, &track_id);
-                    player_bus.publish_message(playerbus::Message::ForcePlay);
-                },
-                Some(playerbus::Command::Like(track_id)) => {
-                    let _ = session.add_track_to_favorites(&track_id);
-                    player_bus.publish_message(playerbus::Message::TrackAddedToFavorites);
-                },
-                _ => {},
-            }
-
-            std::thread::sleep(Duration::from_millis(500));
-        }
+fn service_module(player_bus: PlayerBus, discovery_store: DiscoveryStore) {
+    thread::spawn(move || {
+        discovery_store.listen_commands(player_bus);
     });
 }
 
@@ -93,16 +69,16 @@ fn server_module(player_bus: PlayerBus) {
     }).unwrap();
 }
 
-fn player_module(playlist: Playlist, player_bus: PlayerBus) {
+fn player_module(playlist: Playlist, player_bus: PlayerBus) -> JoinHandle<()> {
     thread::Builder::new()
         .name("Player module".to_owned())
         .spawn_with_priority(ThreadPriority::Max, move |_| {
             player::player(&playlist, player_bus);
-    }).unwrap();
+    }).unwrap()
 }
 
-async fn gui_module(player_bus: PlayerBus, config: Config) {
-    Gui::init(player_bus.clone(), config)
+async fn gui_module(player_bus: PlayerBus) {
+    Gui::init(player_bus.clone())
         .gui_loop()
         .await;
 }
@@ -127,14 +103,19 @@ fn main() {
     let config = Config::init_default_path();
     let playlist = Playlist::new();
     let player_bus = PlayerBus::new();
-
     let discovery_store = DiscoveryStore::new(playlist.clone());
+
+    session_module(config.clone(), player_bus.clone());
     discovery_module(player_bus.clone(), discovery_store.clone());
     service_module(player_bus.clone(), discovery_store.clone());
     downloader_module(player_bus.clone(), config.clone(), playlist.clone());
-    
     server_module(player_bus.clone());
-    player_module(playlist.clone(), player_bus.clone());
 
-    macroquad::Window::from_config(conf(), gui_module(player_bus.clone(), config));
+    let player = player_module(playlist.clone(), player_bus.clone());
+
+    if config.gui.enabled {
+        macroquad::Window::from_config(conf(), gui_module(player_bus.clone()));
+    } else {
+        let _ = player.join();
+    }
 }

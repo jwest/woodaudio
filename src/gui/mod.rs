@@ -2,7 +2,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use macroquad::prelude::*;
 
-use crate::config::Config;
 use crate::playerbus::{BroadcastChannel, Command, PlayerBus, State};
 
 use self::actions::Actions;
@@ -69,7 +68,7 @@ pub struct Fonts{
 }
 
 impl Gui {
-    pub fn init(mut player_bus: PlayerBus, config: Config) -> Gui {
+    pub fn init(mut player_bus: PlayerBus) -> Gui {
         let state = State::default_state();
 
         let channel = player_bus.register_command_channel(vec!["ShowScreen".to_string()]);
@@ -85,7 +84,7 @@ impl Gui {
             channel,
             state,
             screen_registry: ScreenRegistry::init(vec![
-                Box::new(SessionGui::init(config)),
+                Box::new(SessionGui::init()),
                 Box::new(Player::init(player_bus)),
                 Box::new(Actions::init(home::home_dir().unwrap().join("actions.json").to_str().unwrap().to_string())),
             ]),

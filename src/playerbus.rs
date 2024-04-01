@@ -62,6 +62,7 @@ pub enum Message {
     UserClickBackToPlayer(),
 
     SessionUpdated(Session),
+    SessionLoginLinkCreated(String),
 }
 
 #[derive(Debug)]
@@ -70,6 +71,7 @@ pub struct State {
     pub player: PlayerState,
     pub track: Option<TrackState>,
     pub session: Option<Session>,
+    pub device_login_link: Option<String>,
 }
 
 #[derive(Debug)]
@@ -214,6 +216,7 @@ impl State {
             },
             track: None,
             session: None,
+            device_login_link: None,
         }
     }
 }
@@ -248,7 +251,8 @@ impl PlayerBus {
             Message::ForcePlay => { self.publish_command(Command::Next); prev_state },
             Message::UserClickActions() => { self.publish_command(Command::ShowScreen("/actions".to_string())); prev_state },
             Message::UserClickBackToPlayer() => { self.publish_command(Command::ShowScreen("/player".to_string())); prev_state },
-            Message::SessionUpdated(session) => { self.publish_command(Command::ShowScreen("/player".to_string())); State { session: Some(session), ..prev_state } }
+            Message::SessionUpdated(session) => { self.publish_command(Command::ShowScreen("/player".to_string())); State { session: Some(session), ..prev_state } },
+            Message::SessionLoginLinkCreated(login_link) => { State { device_login_link: Some(login_link), ..prev_state } }
         };
 
         *state = next_state;

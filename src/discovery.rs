@@ -1,11 +1,11 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use log::info;
 use rand::thread_rng;
 use rand::seq::SliceRandom;
 use serde_json::Value;
 
-use crate::{playlist::{Playlist, Track}, session::Session};
+use crate::{playerbus::{self, PlayerBus}, playlist::{Playlist, Track}, session::Session};
 
 #[derive(Debug)]
 enum DiscoverablePriority {
@@ -101,7 +101,7 @@ impl DiscoveryStore  {
         Ok(())
     }
 
-    pub fn discovery_radio(&self, session: &Session, track_id: &str) -> Result<(), Box<dyn Error>> {
+    fn discovery_radio(&self, session: &Session, track_id: &str) -> Result<(), Box<dyn Error>> {
         info!("[Discovery] Discover radio for track: {}", track_id);
         let radio = session.get_track_radio(track_id).unwrap();
         let mut tracks: Vec<Track> = vec![];
@@ -121,11 +121,11 @@ impl DiscoveryStore  {
         Ok(())
     }
 
-    pub fn discovery_track(&self, session: &Session, track_id: &str) -> Result<(), Box<dyn Error>> {
+    fn discovery_track(&self, session: &Session, track_id: &str) -> Result<(), Box<dyn Error>> {
         self.discovery_radio(session, track_id)
     }
 
-    pub fn discovery_album(&self, session: &Session, album_id: &str) -> Result<(), Box<dyn Error>> {
+    fn discovery_album(&self, session: &Session, album_id: &str) -> Result<(), Box<dyn Error>> {
         let album = session.get_album(album_id).unwrap();
         let mut tracks: Vec<Track> = vec![];
 
@@ -144,7 +144,7 @@ impl DiscoveryStore  {
         Ok(())
     }
 
-    pub fn discovery_artist(&self, session: &Session, artist_id: &str) -> Result<(), Box<dyn Error>> {
+    fn discovery_artist(&self, session: &Session, artist_id: &str) -> Result<(), Box<dyn Error>> {
         let artist = session.get_artist(artist_id).unwrap();
         let mut tracks: Vec<Track> = vec![];
 
@@ -160,5 +160,42 @@ impl DiscoveryStore  {
 
         self.queue.push_tracks(DiscoverablePriority::High, tracks);
         Ok(())
+    }
+
+    pub fn listen_commands(&self, mut player_bus: PlayerBus) {
+        let channel = player_bus.register_command_channel(
+            vec!["Radio".to_string(), "PlayTrackForce".to_string(), "PlayAlbumForce".to_string(), "PlayArtistForce".to_string(), "Like".to_string()
+        ]);
+        let session = player_bus.wait_for_session();
+
+        loop {
+            let command = channel.read_command();
+
+            match command {
+                Some(playerbus::Command::Radio(track_id)) => {
+                    let _ = self.discovery_radio(&session, &track_id);
+                    player_bus.publish_message(playerbus::Message::ForcePlay);
+                },
+                Some(playerbus::Command::PlayTrackForce(track_id)) => {
+                    let _ = self.discovery_track(&session, &track_id);
+                    player_bus.publish_message(playerbus::Message::ForcePlay);
+                },
+                Some(playerbus::Command::PlayAlbumForce(track_id)) => {
+                    let _ = self.discovery_album(&session, &track_id);
+                    player_bus.publish_message(playerbus::Message::ForcePlay);
+                },
+                Some(playerbus::Command::PlayArtistForce(track_id)) => {
+                    let _ = self.discovery_artist(&session, &track_id);
+                    player_bus.publish_message(playerbus::Message::ForcePlay);
+                },
+                Some(playerbus::Command::Like(track_id)) => {
+                    let _ = session.add_track_to_favorites(&track_id);
+                    player_bus.publish_message(playerbus::Message::TrackAddedToFavorites);
+                },
+                _ => {},
+            }
+
+            std::thread::sleep(Duration::from_millis(500));
+        }
     }
 }

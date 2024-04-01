@@ -9,6 +9,7 @@ use std::{time, thread};
 use log::info;
 
 use crate::config::Config;
+use crate::playerbus::{Message, PlayerBus};
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -98,6 +99,28 @@ struct ResponseSession {
 }
 
 impl Session {
+    pub fn setup(config: &mut Config, player_bus: PlayerBus) -> Session {
+        Session::check_internet_connection();
+
+        match Session::try_from_file(config) {
+            Ok(session) => {
+                player_bus.publish_message(Message::SessionUpdated(session.clone()));
+                return session;
+            },
+            _ => {}
+        }
+
+        let device_auth = Session::login_link().unwrap();
+        player_bus.publish_message(Message::SessionLoginLinkCreated(device_auth.clone().format_url()));
+
+        return match device_auth.wait_for_link(config) {
+            Ok(session) => {
+                player_bus.publish_message(Message::SessionUpdated(session.clone()));
+                session
+            },
+            Err(_) => Session::setup(config, player_bus),
+        }
+    }
     pub fn try_from_file(config: &Config) -> Result<Session, Box<dyn Error>> {
         Session::init(format!("{} {}", config.tidal.token_type, config.tidal.access_token))
     }

@@ -1,23 +1,20 @@
 use macroquad::prelude::*;
+use qrcode_generator::QrCodeEcc;
 
-use crate::{config::Config, playerbus::{Message::SessionUpdated, State}, session::{DeviceAuthorization, Session}};
+use crate::playerbus::State;
 
 use super::Screen;
 
 pub struct SessionGui {
-    config: Config,
-    internet_connection: bool,
-    session: Option<Session>,
-    device_auth: Option<DeviceAuthorization>,
+    device_login_link: Option<String>,
+    qrcode_image: Option<Texture2D>,
 }
 
 impl SessionGui {
-    pub fn init(config: Config) -> SessionGui {
+    pub fn init() -> SessionGui {
         Self { 
-            session: None,
-            device_auth: None,
-            internet_connection: false,
-            config,
+            device_login_link: None,
+            qrcode_image: None,
         }
     }
 
@@ -27,34 +24,24 @@ impl SessionGui {
 }
 
 impl Screen for SessionGui {
-    fn update(&mut self, _: State) {
-        if !self.internet_connection {
-            self.internet_connection = Session::check_internet_connection();
-        } else if self.device_auth.is_some() {
-            match self.device_auth.clone().unwrap().wait_for_link(&mut self.config) {
-                Ok(session) => self.session = Some(session.clone()),
-                Err(_) => {
-                    self.device_auth = Some(Session::login_link().unwrap());
-                },
-            }
-        } else if self.session.is_none() {
-            match Session::try_from_file(&self.config) {
-                Ok(session) => self.session = Some(session),
-                Err(_) => {
-                    self.device_auth = Some(Session::login_link().unwrap());
-                },
-            }
+    fn update(&mut self, state: State) {
+        if self.device_login_link.is_none() && state.device_login_link.is_some() {
+            let code = qrcode_generator::to_png_to_vec(state.device_login_link.clone().unwrap().as_bytes(), QrCodeEcc::Low, 300).unwrap();
+            self.qrcode_image = Some(Texture2D::from_file_with_format(&code, None));
         }
+        self.device_login_link = state.device_login_link;
     }
 
     fn render(&self, ui: &super::Gui) {
-        if self.session.is_some() {
-            ui.player_bus.publish_message(SessionUpdated(self.session.clone().unwrap()));
-            return;
-        }
-        
-        let link = self.device_auth.clone().map_or("Loading...".to_string(), |d| d.format_url());
+        let link = self.device_login_link.clone().map_or("Loading...".to_string(), |link| link);
         self.render_text(link, ui);
+
+        if let Some(image) = &self.qrcode_image {
+            draw_texture_ex(image, screen_width() / 2.0 - 160.0, 144.0, WHITE, DrawTextureParams {
+                rotation: 0.0,
+                ..Default::default()
+            });
+        }
     }
     
     fn nav_id(&self) -> String {
