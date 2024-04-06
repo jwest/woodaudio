@@ -11,6 +11,7 @@ use self::session::SessionGui;
 pub mod session;
 pub mod actions;
 pub mod player;
+pub mod systray;
 
 pub trait Screen {
     fn nav_id(&self) -> String;

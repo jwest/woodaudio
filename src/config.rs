@@ -61,6 +61,7 @@ impl Tidal {
 #[derive(Clone)]
 pub struct Gui {
     pub enabled: bool,
+    pub systray_enabled: bool,
     pub display_cover_background: bool,
     pub display_cover_foreground: bool,
 }
@@ -70,6 +71,7 @@ impl Gui {
         let properties = conf.section(Some("GUI"));
         Self {
             enabled: properties.get_bool_with_default("enabled", true),
+            systray_enabled: properties.get_bool_with_default("systray_enabled", true),
             display_cover_background: properties.get_bool_with_default("display_cover_background", true),
             display_cover_foreground: properties.get_bool_with_default("display_cover_foreground", true),
         }
@@ -77,6 +79,7 @@ impl Gui {
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("GUI"))
             .set("enabled", bool_to_string(self.enabled))
+            .set("systray_enabled", bool_to_string(self.enabled))
             .set("display_cover_background", bool_to_string(self.display_cover_background))
             .set("display_cover_foreground", bool_to_string(self.display_cover_foreground));
     }

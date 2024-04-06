@@ -84,7 +84,7 @@ impl Button for TrackRadioButton {
         if state.track.is_none() {
             return;
         }
-        self.player_bus.publish_message(Message::UserLoadRadio(state.track.unwrap().id));
+        self.player_bus.publish_message(Message::UserLoadRadio);
     }
 }
 
@@ -109,7 +109,7 @@ impl Button for LikeButton {
         if state.track.is_none() {
             return;
         }
-        self.player_bus.publish_message(Message::UserLike(state.track.unwrap().id));
+        self.player_bus.publish_message(Message::UserLike);
     }
 }
 
@@ -131,7 +131,7 @@ impl Button for ActionsButton {
     }
     
     fn action(&self, _: State) {
-        self.player_bus.publish_message(Message::UserClickActions());
+        self.player_bus.publish_message(Message::UserClickActions);
     }
 }
 

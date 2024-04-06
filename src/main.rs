@@ -1,5 +1,5 @@
 use env_logger::Target;
-use gui::Gui;
+use gui::{systray::Systray, Gui};
 use log::error;
 use macroquad::window::Conf;
 use session::Session;
@@ -24,8 +24,8 @@ mod config;
 use config::Config;
 
 mod player;
-mod gui;
 mod http;
+mod gui;
 
 fn session_module(config: Config, player_bus: PlayerBus) {
     thread::spawn(move || {
@@ -112,6 +112,11 @@ fn main() {
     server_module(player_bus.clone());
 
     let player = player_module(playlist.clone(), player_bus.clone());
+    
+    #[cfg(target_os = "macos")]
+    if config.gui.systray_enabled {
+        Systray::init(player_bus.clone()).display();
+    }
 
     if config.gui.enabled {
         macroquad::Window::from_config(conf(), gui_module(player_bus.clone()));

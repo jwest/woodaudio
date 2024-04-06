@@ -105,7 +105,7 @@ impl Screen for Actions {
                     WHITE
                 );
 
-                gui.player_bus.publish_message(crate::playerbus::Message::UserClickBackToPlayer());
+                gui.player_bus.publish_message(crate::playerbus::Message::UserClickBackToPlayer);
                 return;
             }
         }
