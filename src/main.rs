@@ -1,8 +1,8 @@
+use backend::{session::Session, Backend, TidalBackend};
 use env_logger::Target;
 use gui::{systray::Systray, Gui};
 use log::error;
 use macroquad::window::Conf;
-use session::Session;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::thread::{self, JoinHandle};
 
@@ -12,13 +12,7 @@ use playerbus::PlayerBus;
 mod playlist;
 use playlist::Playlist;
 
-mod session;
-
-mod discovery;
-use discovery::DiscoveryStore;
-
-mod downloader;
-use downloader::Downloader;
+mod backend;
 
 mod config;
 use config::Config;
@@ -33,27 +27,24 @@ fn session_module(config: Config, player_bus: PlayerBus) {
     });
 }
 
-fn service_module(player_bus: PlayerBus, discovery_store: DiscoveryStore) {
+fn service_module(backend: Backend, playlist: Playlist) {
     thread::spawn(move || {
-        discovery_store.listen_commands(player_bus);
+        backend.listen_commands(playlist);
     });
 }
 
-fn discovery_module(player_bus: PlayerBus, discovery_store: DiscoveryStore) {
+fn discovery_module(backend: Backend) {
     thread::spawn(move || {
-        let session = player_bus.wait_for_session();
-        let _ = discovery_store.discover_mixes(&session);
-        let _ = discovery_store.discover_favorities_tracks(&session);
+        backend.discover();
     });
 }
 
-fn downloader_module(player_bus: PlayerBus, config: Config, playlist: Playlist) {
+fn downloader_module(player_bus: PlayerBus, playlist: Playlist, backend: Backend) {
     thread::spawn(move || {
-        let session = player_bus.wait_for_session();
-        let downloader = Downloader::init(&session, &config);
+        player_bus.wait_for_session();
 
         playlist.buffer_worker(|track| {
-            match downloader.download_file(track) {
+            match backend.download(track) {
                 Ok(buffered_track) => Some(buffered_track),
                 Err(err) => { error!("[Downloader] download file error: {:?}", err); None },
             }
@@ -100,15 +91,17 @@ fn main() {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let config = Config::init_default_path();
+    let mut config = Config::init_default_path();
     let playlist = Playlist::new();
     let player_bus = PlayerBus::new();
-    let discovery_store = DiscoveryStore::new(playlist.clone());
+    let backend = Backend::init(
+        TidalBackend::init(&mut config, player_bus.clone()), player_bus.clone()
+    );
 
     session_module(config.clone(), player_bus.clone());
-    discovery_module(player_bus.clone(), discovery_store.clone());
-    service_module(player_bus.clone(), discovery_store.clone());
-    downloader_module(player_bus.clone(), config.clone(), playlist.clone());
+    discovery_module(backend.clone());
+    service_module(backend.clone(), playlist.clone());
+    downloader_module(player_bus.clone(), playlist.clone(), backend);
     server_module(player_bus.clone());
 
     let player = player_module(playlist.clone(), player_bus.clone());

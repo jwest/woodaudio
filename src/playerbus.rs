@@ -4,8 +4,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use log::{debug, info};
 
-use crate::{playlist::{BufferedTrack, Cover, Track}, session::Session};
-
+use crate::{backend::session::Session, playlist::{BufferedTrack, Cover, Track}};
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -19,6 +18,8 @@ pub enum Command {
     PlayAlbumForce(String),
     PlayArtistForce(String),
     ShowScreen(String),
+    AddTracksToPlaylist(Vec<Track>),
+    AddTracksToPlaylistForce(Vec<Track>),
 }
 
 impl Command {
@@ -33,6 +34,8 @@ impl Command {
             Command::PlayAlbumForce(_) => "PlayAlbumForce".to_owned(),
             Command::PlayArtistForce(_) => "PlayArtistForce".to_owned(),
             Command::ShowScreen(_) => "ShowScreen".to_owned(),
+            Command::AddTracksToPlaylist(_) => "AddTracksToPlaylist".to_owned(),
+            Command::AddTracksToPlaylistForce(_) => "AddTracksToPlaylistForce".to_owned(),
         }
     }
 }
@@ -40,6 +43,8 @@ impl Command {
 #[derive(Debug)]
 #[derive(Clone)]
 pub enum Message {
+    TrackDiscovered(Track),
+    TracksDiscoveredWithHighPriority(Vec<Track>),
     PlayerPlayingNewTrack(BufferedTrack),
     PlayerPlaying,
     PlayerToPause,
@@ -47,7 +52,6 @@ pub enum Message {
     PlayerQueueIsEmpty,
 
     TrackAddedToFavorites,
-    ForcePlay,
 
     UserPlay,
     UserPause,
@@ -234,6 +238,8 @@ impl PlayerBus {
 
         let prev_state = state.clone();
         let next_state = match message {
+            Message::TrackDiscovered(track) => { self.publish_command(Command::AddTracksToPlaylist(vec![track])); prev_state },
+            Message::TracksDiscoveredWithHighPriority(tracks) => { self.publish_command(Command::AddTracksToPlaylistForce(tracks)); prev_state },
             Message::PlayerPlayingNewTrack(track) => State { track: Some(TrackState::from(track)), player: PlayerState { case: PlayerStateCase::Playing, playing_time: Some(Duration::ZERO) }, ..prev_state },
             Message::PlayerPlaying => State { player: PlayerState { case: PlayerStateCase::Playing, ..prev_state.player }, ..prev_state },
             Message::PlayerToPause => State { player: PlayerState { case: PlayerStateCase::Paused, ..prev_state.player }, ..prev_state },
@@ -248,7 +254,6 @@ impl PlayerBus {
             Message::UserPlayAlbum(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayAlbumForce(track)); prev_state },
             Message::UserPlayArtist(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayArtistForce(track)); prev_state },
             Message::TrackAddedToFavorites => { prev_state },
-            Message::ForcePlay => { self.publish_command(Command::Next); prev_state },
             Message::UserClickActions => { self.publish_command(Command::ShowScreen("/actions".to_string())); prev_state },
             Message::UserClickBackToPlayer => { self.publish_command(Command::ShowScreen("/player".to_string())); prev_state },
             Message::SessionUpdated(session) => { self.publish_command(Command::ShowScreen("/player".to_string())); State { session: Some(session), ..prev_state } },

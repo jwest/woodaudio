@@ -8,7 +8,9 @@ use secular::normalized_lower_lay_string;
 use suppaftp::{types::FileType, FtpStream};
 use tempfile::NamedTempFile;
 
-use crate::{config::{Config, ExporterFTP}, playlist::{BufferedTrack, Cover, Track}, session::Session};
+use crate::{config::{Config, ExporterFTP}, playlist::{BufferedTrack, Cover, Track}};
+
+use super::session::Session;
 
 trait CacheRead {
     fn read_file(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<bytes::Bytes>, Box<dyn Error>>;
@@ -80,6 +82,7 @@ impl CacheRead for FtpStorage {
     }
 }
 
+#[derive(Clone)]
 pub struct Downloader {
     storage: Arc<Mutex<Option<FtpStorage>>>,
     session: Session,
