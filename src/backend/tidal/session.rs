@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use reqwest::blocking::{Client, Response};
 use reqwest::header;
 use serde::Deserialize;
@@ -13,7 +14,7 @@ use crate::playerbus::{Message, PlayerBus};
 
 #[derive(Debug)]
 #[derive(Clone)]
-pub struct Session {
+pub(super) struct Session {
     session_id: String,
     country_code: String,
     user_id: i64,
@@ -41,7 +42,7 @@ struct ResponseMedia {
 #[derive(Clone)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DeviceAuthorization {
+struct DeviceAuthorization {
     verification_uri_complete: String,
     device_code: String,
     // expires_in: u16,
@@ -49,10 +50,10 @@ pub struct DeviceAuthorization {
 }
 
 impl DeviceAuthorization {
-    pub fn format_url(&self) -> String {
+    fn format_url(&self) -> String {
         format!("https://{}", self.verification_uri_complete)
     }
-    pub fn wait_for_link(&self, config: &mut Config) -> Result<Session, Box<dyn Error>> {
+    fn wait_for_link(&self, config: &mut Config) -> Result<Session, Box<dyn Error>> {
         let client_id = "zU4XHVVkc2tDPo4t";
         let client_secret = "VJKhDFqJPqvsPVNBV6ukXTJmwlvbttP7wlMlrc72se4%3D";
         let client = reqwest::blocking::Client::builder().build()?;
@@ -99,32 +100,33 @@ struct ResponseSession {
 }
 
 impl Session {
-    pub fn setup(config: &mut Config, player_bus: PlayerBus) -> Session {
+    pub(super) fn setup(config: &mut Config, player_bus: PlayerBus) -> Session {
+        player_bus.publish_message(Message::TidalBackendStarted);
         Session::check_internet_connection();
 
         match Session::try_from_file(config) {
             Ok(session) => {
-                player_bus.publish_message(Message::SessionUpdated(session.clone()));
+                player_bus.publish_message(Message::TidalBackendInitialized);
                 return session;
             },
             _ => {}
         }
 
         let device_auth = Session::login_link().unwrap();
-        player_bus.publish_message(Message::SessionLoginLinkCreated(device_auth.clone().format_url()));
+        player_bus.publish_message(Message::TidalBackendLoginLinkCreated(device_auth.clone().format_url()));
 
         return match device_auth.wait_for_link(config) {
             Ok(session) => {
-                player_bus.publish_message(Message::SessionUpdated(session.clone()));
+                player_bus.publish_message(Message::TidalBackendInitialized);
                 session
             },
             Err(_) => Session::setup(config, player_bus),
         }
     }
-    pub fn try_from_file(config: &Config) -> Result<Session, Box<dyn Error>> {
+    fn try_from_file(config: &Config) -> Result<Session, Box<dyn Error>> {
         Session::init(format!("{} {}", config.tidal.token_type, config.tidal.access_token))
     }
-    pub fn login_link() -> Result<DeviceAuthorization, Box<dyn Error>> {
+    fn login_link() -> Result<DeviceAuthorization, Box<dyn Error>> {
         let client_id = "zU4XHVVkc2tDPo4t";
         let client = reqwest::blocking::Client::builder()
             .build()?;
@@ -137,7 +139,7 @@ impl Session {
 
         Ok(device_auth_response)
     }
-    pub fn init(token: String) -> Result<Session, Box<dyn Error>> {
+    fn init(token: String) -> Result<Session, Box<dyn Error>> {
         let mut headers = header::HeaderMap::new();
         headers.insert(header::AUTHORIZATION, header::HeaderValue::from_str(token.as_str()).unwrap());
     
@@ -164,7 +166,7 @@ impl Session {
 
         Err("Session is outdated".into())
     }
-    pub fn check_internet_connection() -> bool {
+    fn check_internet_connection() -> bool {
         info!("Wait for internet connection to tidal... ");
         let res = reqwest::blocking::Client::default().get("https://api.tidal.com/").send();
         res.is_ok()
@@ -181,49 +183,49 @@ impl Session {
         let res = self.build_client().get(url).send()?;
         Ok(res)
     }
-    pub fn get_page_for_you(&self) -> Result<Value, Box<dyn Error>> {
+    pub(super) fn get_page_for_you(&self) -> Result<Value, Box<dyn Error>> {
         let response = self.request(format!("{}/pages/for_you?countryCode={}&deviceType=BROWSER", self.api_path, self.country_code))?;
         let body = response.text()?;
         let result: Value = serde_json::from_str(&body)?;
         Ok(result)
     }
-    pub fn get_mix(&self, mix_id: &str) -> Result<Value, Box<dyn Error>> {
+    pub(super) fn get_mix(&self, mix_id: &str) -> Result<Value, Box<dyn Error>> {
         let response = self.request(format!("{}/pages/mix?countryCode={}&deviceType=BROWSER&mixId={}", self.api_path, self.country_code, mix_id))?;
         let body = response.text()?;
         let result: Value = serde_json::from_str(&body)?;
         Ok(result)
     }
-    pub fn get_favorites(&self) -> Result<Value, Box<dyn Error>> {
+    pub(super) fn get_favorites(&self) -> Result<Value, Box<dyn Error>> {
         let response = self.request(format!("{}/users/{}/favorites/tracks?countryCode={}&limit=100&offset=0", self.api_path, self.user_id, self.country_code))?;
         let body = response.text()?;
         let result: Value = serde_json::from_str(&body)?;
         Ok(result)
     }
-    pub fn get_album(&self, album_id: &str) -> Result<Value, Box<dyn Error>> {
+    pub(super) fn get_album(&self, album_id: &str) -> Result<Value, Box<dyn Error>> {
         let response = self.request(format!("{}/albums/{}/tracks?countryCode={}&deviceType=BROWSER", self.api_path, album_id, self.country_code))?;
         let body = response.text()?;
         let result: Value = serde_json::from_str(&body)?;
         Ok(result)
     }
-    pub fn get_artist(&self, artist_id: &str) -> Result<Value, Box<dyn Error>> {
+    pub(super) fn get_artist(&self, artist_id: &str) -> Result<Value, Box<dyn Error>> {
         let response = self.request(format!("{}/artists/{}/toptracks?countryCode={}&deviceType=BROWSER", self.api_path, artist_id, self.country_code))?;
         let body = response.text()?;
         let result: Value = serde_json::from_str(&body)?;
         Ok(result)
     }
-    pub fn get_track_radio(&self, track_id: &str) -> Result<Value, Box<dyn Error>> {
+    pub(super) fn get_track_radio(&self, track_id: &str) -> Result<Value, Box<dyn Error>> {
         let response = self.request(format!("{}/tracks/{}/radio?countryCode={}&deviceType=BROWSER", self.api_path, track_id, self.country_code))?;
         let body = response.text()?;
         let result: Value = serde_json::from_str(&body)?;
         Ok(result)
     }
-    pub fn add_track_to_favorites(&self, track_id: &str) -> Result<(), Box<dyn Error>> {
+    pub(super) fn add_track_to_favorites(&self, track_id: &str) -> Result<(), Box<dyn Error>> {
         self.build_client().post(format!("{}/users/{}/favorites/tracks?countryCode={}&deviceType=BROWSER", self.api_path, self.user_id, self.country_code))
             .form(&[("trackId", track_id)])
             .send()?;
         Ok(())
     }
-    pub fn get_track_url(&self, track_id: String) -> Result<String, Box<dyn Error>> {
+    pub(super) fn get_track_url(&self, track_id: String) -> Result<String, Box<dyn Error>> {
         let response = self.request(format!("{}/tracks/{}/urlpostpaywall?sessionId={}&urlusagemode=STREAM&audioquality=LOSSLESS&assetpresentation=FULL", self.api_path, track_id, self.session_id))?;
         if response.status().is_success() {
             let url = response.json::<ResponseMedia>()?.urls[0].clone();
@@ -235,5 +237,23 @@ impl Session {
             thread::sleep(time::Duration::from_secs(5));
             self.get_track_url(track_id)
         }
+    }
+    pub(super) fn get_track_bytes(&self, track_id: String) -> Result<Bytes, Box<dyn Error>> {
+        let url = self.get_track_url(track_id.clone())?;
+            
+        let file_response = Client::builder()
+            .timeout(Duration::from_secs(300))
+            .build()?.get(url).send()?;
+
+        Ok(file_response.bytes()?)
+    }
+    pub(super) fn get_cover_bytes(&self, cover_url: String) -> Result<Bytes, Box<dyn Error>> {
+        let file_response = Client::builder()
+            .timeout(Duration::from_secs(500))
+            .build()?
+            .get(&cover_url).send()?
+            .bytes()?;
+
+        Ok(file_response)
     }
 }

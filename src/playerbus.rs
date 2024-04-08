@@ -4,7 +4,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use log::{debug, info};
 
-use crate::{backend::session::Session, playlist::{BufferedTrack, Cover, Track}};
+use crate::playlist::{BufferedTrack, Cover, Track};
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -43,8 +43,6 @@ impl Command {
 #[derive(Debug)]
 #[derive(Clone)]
 pub enum Message {
-    TrackDiscovered(Track),
-    TracksDiscoveredWithHighPriority(Vec<Track>),
     PlayerPlayingNewTrack(BufferedTrack),
     PlayerPlaying,
     PlayerToPause,
@@ -52,6 +50,8 @@ pub enum Message {
     PlayerQueueIsEmpty,
 
     TrackAddedToFavorites,
+    TrackDiscovered(Track),
+    TracksDiscoveredWithHighPriority(Vec<Track>),
 
     UserPlay,
     UserPause,
@@ -65,8 +65,9 @@ pub enum Message {
     UserClickActions,
     UserClickBackToPlayer,
 
-    SessionUpdated(Session),
-    SessionLoginLinkCreated(String),
+    TidalBackendStarted,
+    TidalBackendLoginLinkCreated(String),
+    TidalBackendInitialized,
 }
 
 #[derive(Debug)]
@@ -74,8 +75,22 @@ pub enum Message {
 pub struct State {
     pub player: PlayerState,
     pub track: Option<TrackState>,
-    pub session: Option<Session>,
-    pub device_login_link: Option<String>,
+    pub backends: BackendsState,
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub enum BackendState {
+    Off,
+    Initialization,
+    WaitingForLoginByLink(String),
+    Ready,
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct BackendsState {
+    pub tidal: BackendState,
 }
 
 #[derive(Debug)]
@@ -219,8 +234,9 @@ impl State {
                 playing_time: None,
             },
             track: None,
-            session: None,
-            device_login_link: None,
+            backends: BackendsState { 
+                tidal: BackendState::Off
+            },
         }
     }
 }
@@ -238,8 +254,6 @@ impl PlayerBus {
 
         let prev_state = state.clone();
         let next_state = match message {
-            Message::TrackDiscovered(track) => { self.publish_command(Command::AddTracksToPlaylist(vec![track])); prev_state },
-            Message::TracksDiscoveredWithHighPriority(tracks) => { self.publish_command(Command::AddTracksToPlaylistForce(tracks)); prev_state },
             Message::PlayerPlayingNewTrack(track) => State { track: Some(TrackState::from(track)), player: PlayerState { case: PlayerStateCase::Playing, playing_time: Some(Duration::ZERO) }, ..prev_state },
             Message::PlayerPlaying => State { player: PlayerState { case: PlayerStateCase::Playing, ..prev_state.player }, ..prev_state },
             Message::PlayerToPause => State { player: PlayerState { case: PlayerStateCase::Paused, ..prev_state.player }, ..prev_state },
@@ -254,10 +268,13 @@ impl PlayerBus {
             Message::UserPlayAlbum(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayAlbumForce(track)); prev_state },
             Message::UserPlayArtist(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayArtistForce(track)); prev_state },
             Message::TrackAddedToFavorites => { prev_state },
+            Message::TrackDiscovered(track) => { self.publish_command(Command::AddTracksToPlaylist(vec![track])); prev_state },
+            Message::TracksDiscoveredWithHighPriority(tracks) => { self.publish_command(Command::AddTracksToPlaylistForce(tracks)); prev_state },
             Message::UserClickActions => { self.publish_command(Command::ShowScreen("/actions".to_string())); prev_state },
             Message::UserClickBackToPlayer => { self.publish_command(Command::ShowScreen("/player".to_string())); prev_state },
-            Message::SessionUpdated(session) => { self.publish_command(Command::ShowScreen("/player".to_string())); State { session: Some(session), ..prev_state } },
-            Message::SessionLoginLinkCreated(login_link) => { State { device_login_link: Some(login_link), ..prev_state } }
+            Message::TidalBackendStarted => State { backends: BackendsState { tidal: BackendState::Initialization, ..prev_state.backends }, ..prev_state },
+            Message::TidalBackendLoginLinkCreated(login_link) =>  State { backends: BackendsState { tidal: BackendState::WaitingForLoginByLink(login_link), ..prev_state.backends }, ..prev_state },
+            Message::TidalBackendInitialized => { self.publish_command(Command::ShowScreen("/player".to_string())); State { backends: BackendsState { tidal: BackendState::Ready, ..prev_state.backends }, ..prev_state }},
         };
 
         *state = next_state;
@@ -273,14 +290,5 @@ impl PlayerBus {
 
     pub fn read_state(&self) -> State {
         self.state.lock().unwrap().clone()
-    }
-
-    pub fn wait_for_session(&self) -> Session {
-        loop {
-            let state = self.state.lock().unwrap();
-            if state.session.is_some() {
-                return state.session.clone().unwrap();
-            }
-        }
     }
 }

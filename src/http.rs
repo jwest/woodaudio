@@ -26,23 +26,14 @@ pub fn server(player_bus: &PlayerBus) {
 
                     if tidal_url.starts_with("https://tidal.com/track/") {
                         player_bus.publish_message(playerbus::Message::UserPlayTrack(id.to_string()));
-                        // player_bus.publish_message(playerbus::Message::UserPause);
-                        // let _ = discovery_store.discovery_track(id);
-                        // player_bus.publish_message(playerbus::Message::UserPlayNext);
                     }
 
                     if tidal_url.starts_with("https://tidal.com/album/") {
                         player_bus.publish_message(playerbus::Message::UserPlayAlbum(id.to_string()));
-                        // player_bus.publish_message(playerbus::Message::UserPause);
-                        // let _ = discovery_store.discovery_album(id);
-                        // player_bus.publish_message(playerbus::Message::UserPlayNext);
                     }
 
                     if tidal_url.starts_with("https://tidal.com/artist/") {
                         player_bus.publish_message(playerbus::Message::UserPlayArtist(id.to_string()));
-                        // player_bus.publish_message(playerbus::Message::UserPause);
-                        // let _ = discovery_store.discovery_artist(id);
-                        // player_bus.publish_message(playerbus::Message::UserPlayNext);
                     }
                 },
                 _ => {}

@@ -3,9 +3,7 @@ use std::{sync::{Arc, Mutex}, thread, time::Duration};
 use bytes::Bytes;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
-use log::{debug, info};
-use macroquad::logging::error;
-use serde_json::Value;
+use log::{debug, error, info};
 
 #[derive(Clone)]
 pub struct Track {
@@ -18,30 +16,6 @@ pub struct Track {
 }
 
 impl Track {
-    pub fn build_from_json(item: Value) -> Track {
-        let cover = if item["album"]["cover"].is_string() { 
-            item["album"]["cover"].as_str().unwrap()
-        } else { 
-            "0dfd3368-3aa1-49a3-935f-10ffb39803c0" 
-        }.replace('-', "/");
-
-        let artist_name = item["artists"].as_array()
-            .unwrap_or(&Vec::new())
-            .iter()
-            .map(|item| item["name"].as_str().unwrap())
-            .collect::<Vec<&str>>()
-            .join(", ");
-
-        Track {
-            id: item["id"].as_i64().unwrap().to_string(),
-            title: item["title"].as_str().unwrap_or_default().to_string(),
-            artist_name,
-            album_name: item["album"]["title"].as_str().unwrap_or_default().to_string(),
-            album_image: format!("https://resources.tidal.com/images/{}/{}x{}.jpg", cover, 320, 320),
-            duration: Duration::from_secs(item["duration"].as_u64().unwrap_or_default()),
-        }
-    }
-
     pub fn duration_formated(&self) -> String {
         let seconds = self.duration.as_secs() % 60;
         let minutes = (self.duration.as_secs() / 60) % 60;

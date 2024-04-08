@@ -1,59 +1,76 @@
 use std::{error::Error, sync::{Arc, Mutex}, time::Duration};
 
+use bytes::Bytes;
+
 use crate::{config::Config, playerbus::{self, PlayerBus}, playlist::{BufferedTrack, Playlist, Track}};
 
-use self::{discovery::DiscoveryStore, downloader::Downloader, session::Session};
+use self::{downloader::Downloader, tidal::TidalBackend};
 
-pub mod discovery;
-pub mod session;
-pub mod downloader;
+mod tidal;
+mod downloader;
+mod cover;
+mod storage;
 
-#[derive(Clone)]
-pub struct TidalBackend {
-    discovery: DiscoveryStore,
-    session: Session,
-    downloader: Downloader,
+pub trait Backend {
+    fn init(config: &mut Config, player_bus: PlayerBus) -> Self;
+    fn discovery(&self, discovery_fn: impl Fn(Track));
+    fn get_track(&self, track_id: String) -> Result<Bytes, Box<dyn Error>>;
+    fn get_cover(&self, cover_url: String) -> Result<Bytes, Box<dyn Error>>;
+    fn discovery_radio(&self, id: &str, discovery_fn: impl Fn(Vec<Track>));
+    fn discovery_track(&self, id: &str, discovery_fn: impl Fn(Vec<Track>));
+    fn discovery_album(&self, id: &str, discovery_fn: impl Fn(Vec<Track>));
+    fn discovery_artist(&self, id: &str, discovery_fn: impl Fn(Vec<Track>));
+    fn add_track_to_favorites(&self, track_id: &str);
 }
 
-impl TidalBackend {
-    pub fn init(config: &mut Config, player_bus: PlayerBus) -> Self {
-        let session = Session::setup(config, player_bus.clone());
+#[derive(Clone)]
+pub struct BackendInitialization {
+    backend: Arc<Mutex<Option<BackendService>>>,
+    config: Config,
+    playerbus: PlayerBus,
+}
+
+impl BackendInitialization {
+    pub fn new(config: Config, playerbus: PlayerBus) -> Self {
         Self { 
-            discovery: DiscoveryStore::new(),
-            session: session.clone(),
-            downloader: Downloader::init(&session, config),
+            backend: Arc::new(Mutex::new(None)),
+            config,
+            playerbus,
         }
     }
-    fn discovery(&self, discovery_fn: impl Fn(Track)) {
-        let _ = self.discovery.discover_mixes(&self.session, &discovery_fn);
-        let _ = self.discovery.discover_favorities_tracks(&self.session, &discovery_fn);
+    pub fn initialization(&self) {
+        let tidal = TidalBackend::init(&mut self.config.clone(), self.playerbus.clone());
+        let mut backend = self.backend.lock().unwrap();
+
+        *backend = Some(BackendService::init(&self.config, tidal, self.playerbus.clone()));
     }
-    fn download(&self, track: Track) -> Result<BufferedTrack, Box<dyn Error>> {
-        self.downloader.download_file(track)
+    pub fn get_initialized(&self) -> BackendService {
+        loop {
+            if self.is_initialized() {
+                break;
+            }
+        }
+        self.backend.lock().unwrap().clone().unwrap()
     }
-    fn discovery_radio(&self, id: &str, discovery_fn: impl Fn(Vec<Track>)) {
-        let _ = self.discovery.discovery_radio(&self.session, id, &discovery_fn);
-    }
-    fn discovery_track(&self, id: &str, discovery_fn: impl Fn(Vec<Track>)) {
-        let _ = self.discovery.discovery_track(&self.session, id, &discovery_fn);
-    }
-    fn discovery_album(&self, id: &str, discovery_fn: impl Fn(Vec<Track>)) {
-        let _ = self.discovery.discovery_album(&self.session, id, &discovery_fn);
-    }
-    fn discovery_artist(&self, id: &str, discovery_fn: impl Fn(Vec<Track>)) {
-        let _ = self.discovery.discovery_artist(&self.session, id, &discovery_fn);
+    fn is_initialized(&self) -> bool {
+        self.backend.lock().unwrap().is_some()
     }
 }
 
 #[derive(Clone)]
-pub struct Backend {
+pub struct BackendService {
     tidal: TidalBackend,
+    downloader: Downloader,
     playerbus: Arc<Mutex<PlayerBus>>,
 }
 
-impl Backend {
-    pub fn init(tidal: TidalBackend, playerbus: PlayerBus) -> Self {
-        Self { tidal, playerbus: Arc::new(Mutex::new(playerbus)) }
+impl BackendService {
+    fn init(config: &Config, tidal: TidalBackend, playerbus: PlayerBus) -> Self {
+        Self { 
+            tidal: tidal.clone(),
+            playerbus: Arc::new(Mutex::new(playerbus)),
+            downloader: Downloader::init(config, tidal),
+        }
     }
     pub fn discover(&self) {
         self.tidal.discovery(move |track| {
@@ -61,7 +78,7 @@ impl Backend {
         });
     }
     pub fn download(&self, track: Track) -> Result<BufferedTrack, Box<dyn Error>> {
-        self.tidal.download(track)
+        self.downloader.download_file(track)
     }
     pub fn listen_commands(self, playlist: Playlist) {
         let channel = self.playerbus.lock().unwrap().register_command_channel(
@@ -75,7 +92,6 @@ impl Backend {
                 "Like".to_string(),
             ]
         );
-        let session = self.playerbus.lock().unwrap().wait_for_session();
 
         let discovery_fn = |tracks| {
             self.playerbus.lock().unwrap().publish_message(playerbus::Message::TracksDiscoveredWithHighPriority(tracks));
@@ -104,7 +120,7 @@ impl Backend {
                     let _ = self.tidal.discovery_artist(&track_id, discovery_fn);
                 },
                 Some(playerbus::Command::Like(track_id)) => {
-                    let _ = session.add_track_to_favorites(&track_id);
+                    let _ = self.tidal.add_track_to_favorites(&track_id);
                     self.playerbus.lock().unwrap().publish_message(playerbus::Message::TrackAddedToFavorites);
                 },
                 _ => {},

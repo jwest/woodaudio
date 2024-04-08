@@ -1,93 +1,17 @@
-use std::{error::Error, io::{Cursor, Read}, sync::{Arc, Mutex}, time::Duration};
+use std::{error::Error, sync::{Arc, Mutex}};
 
-use bytes::Buf;
-use image::io::Reader as ImageReader;
 use log::{debug, error, info};
-use reqwest::blocking::Client;
 use secular::normalized_lower_lay_string;
-use suppaftp::{types::FileType, FtpStream};
-use tempfile::NamedTempFile;
 
-use crate::{config::{Config, ExporterFTP}, playlist::{BufferedTrack, Cover, Track}};
-
-use super::session::Session;
-
-trait CacheRead {
-    fn read_file(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<bytes::Bytes>, Box<dyn Error>>;
-}
-
-trait Exporter {
-    fn write_file(&mut self, source: bytes::Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>>;
-}
-
-struct FtpStorage {
-    client: FtpStream,
-    cache_read: bool,
-    output_path: String,
-}
-
-impl FtpStorage {
-    fn init(config: ExporterFTP) -> Self {
-        let mut client = FtpStream::connect(config.server).unwrap();
-        client.login(config.username, config.password).unwrap();
-        client.transfer_type(FileType::Binary).unwrap();
-        client.set_mode(suppaftp::Mode::ExtendedPassive);
-
-        Self { client, cache_read: config.cache_read, output_path: config.share }
-    }
-    fn file_name_with_create_dir(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<String, Box<dyn Error>> {
-        if let Some(dir) = output_dir {
-            self.client.mkdir(dir)?;
-            Ok(format!("/{dir}/{output_file_name}"))
-        } else { 
-            Ok(format!("{}{}", self.output_path, output_file_name))
-        }
-    }
-}
-
-impl Exporter for FtpStorage {
-    fn write_file(&mut self, source: bytes::Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
-        let file_name = self.file_name_with_create_dir(output_file_name, output_dir)?;
-
-        self.client.put_file(
-            file_name.clone(),
-            &mut source.reader()
-        )?;
-
-        info!("[Exporter] file saved on ftp: {:?}", file_name);
-        Ok(())
-    }
-}
-
-impl CacheRead for FtpStorage {
-    fn read_file(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<bytes::Bytes>, Box<dyn Error>> {
-        if !self.cache_read {
-            return Ok(None);
-        }
-
-        let file_name = self.file_name_with_create_dir(output_file_name, output_dir)?;
-        let mut reader = self.client.retr_as_stream(file_name.clone())?;
-
-        let mut output = bytes::BytesMut::new();
-        reader.read_exact(&mut output)?;
-        drop(reader);
-
-        if output.is_empty() {
-            return Ok(None);
-        }
-
-        info!("[Cache] file readed from ftp: {:?} {:?}", file_name, output);
-
-        Ok(Some(output.into()))
-    }
-}
+use crate::{backend::cover::CoverProcessor, config::Config, playlist::{BufferedTrack, Cover, Track}};
+use super::{storage::{CacheRead, Exporter, FtpStorage}, tidal::TidalBackend, Backend};
 
 #[derive(Clone)]
 pub struct Downloader {
     storage: Arc<Mutex<Option<FtpStorage>>>,
-    session: Session,
     display_cover_background: bool,
     display_cover_foreground: bool,
+    backend: TidalBackend,
 }
 
 impl Track {
@@ -97,7 +21,7 @@ impl Track {
 }
 
 impl Downloader {
-    pub fn init(session: &Session, config: &Config) -> Self {
+    pub fn init(config: &Config, backend: TidalBackend) -> Self {
         let storage = match config.exporter_ftp.enabled {
             true => Some(FtpStorage::init(config.exporter_ftp.clone())),
             false => None,
@@ -105,9 +29,9 @@ impl Downloader {
 
         Downloader { 
             storage: Arc::new(Mutex::new(storage)),
-            session: session.clone(), 
             display_cover_background: config.gui.display_cover_background, 
             display_cover_foreground: config.gui.display_cover_foreground,
+            backend,
         }
     }
     
@@ -131,17 +55,7 @@ impl Downloader {
             }
         }
         for _ in 1..5 {
-            let url = self.session.get_track_url(track.id.clone())?;
-            
-            let file_response = Client::builder()
-                .timeout(Duration::from_secs(300))
-                .build()?.get(url).send()?;
-    
-            if !file_response.status().is_success() {
-                continue;
-            }
-
-            let bytes_response = file_response.bytes()?;
+            let bytes_response = self.backend.get_track(track.id.clone())?;
     
             if let Some(ftp_storage) = self.storage.lock().unwrap().as_mut() {
                 let export_bytes = bytes_response.clone();
@@ -175,50 +89,26 @@ impl Downloader {
 
         debug!("[Downloader] Prepare cover '{}'...", cover_url);
     
-        let file_response = Client::builder()
-            .timeout(Duration::from_secs(300))
-            .build()?.get(&cover_url).send()?;
-    
-        let cover = ImageReader::new(Cursor::new(file_response.bytes()?)).with_guessed_format()?.decode()?;
+        let bytes_response = self.backend.get_cover(cover_url.clone())?;
+        let cover = CoverProcessor::new(bytes_response);
 
-        let path_str = match self.display_cover_foreground {
-            true => {
-                let file = NamedTempFile::new()?;
-                let path = file.into_temp_path();
-                let image_str = path.keep()?.to_str().unwrap().to_string();
-                cover
-                    .resize(320, 320, image::imageops::FilterType::Nearest)
-                    .save_with_format(&image_str, image::ImageFormat::Png)
-                    .unwrap();
-                Some(image_str)
-            },
-            false => None,
+        let foreground = if self.display_cover_foreground {
+            Some(cover.generate_foreground()?.to_string_lossy().to_string())
+        } else {
+            None
         };
 
-        let background_path_str = match self.display_cover_background {
-            true => {
-                let background = cover.clone();
-                let background_file = NamedTempFile::new()?;
-                let background_path = background_file.into_temp_path();
-                let background_path_str = background_path.keep()?.to_str().unwrap().to_string();
-                
-                background
-                    .brighten(-75)
-                    .resize(1024, 1024, image::imageops::FilterType::Nearest)
-                    .blur(10.0)
-                    .save_with_format(&background_path_str, image::ImageFormat::Png)
-                    .unwrap();
-
-                Some(background_path_str)
-            },
-            false => None,
+        let background = if self.display_cover_background {
+            Some(cover.generate_background()?.to_string_lossy().to_string())
+        } else {
+            None
         };
         
-        debug!("[Downloader] Cover prepared '{}', foreground: {:?}, background: {:?}", cover_url, path_str, background_path_str);
+        debug!("[Downloader] Cover prepared '{}', foreground: {:?}, background: {:?}", cover_url, foreground, background);
     
         Ok(Cover { 
-            foreground: path_str,
-            background: background_path_str, 
+            foreground,
+            background, 
         })
     }
 }

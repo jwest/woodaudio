@@ -1,4 +1,4 @@
-use backend::{session::Session, Backend, TidalBackend};
+use backend::BackendInitialization;
 use env_logger::Target;
 use gui::{systray::Systray, Gui};
 use log::error;
@@ -21,27 +21,27 @@ mod player;
 mod http;
 mod gui;
 
-fn session_module(config: Config, player_bus: PlayerBus) {
+fn session_module(backend_init: BackendInitialization) {
     thread::spawn(move || {
-        Session::setup(&mut config.clone(), player_bus);
+        backend_init.initialization();
     });
 }
 
-fn service_module(backend: Backend, playlist: Playlist) {
+fn service_module(backend_init: BackendInitialization, playlist: Playlist) {
     thread::spawn(move || {
-        backend.listen_commands(playlist);
+        backend_init.get_initialized().listen_commands(playlist);
     });
 }
 
-fn discovery_module(backend: Backend) {
+fn discovery_module(backend_init: BackendInitialization) {
     thread::spawn(move || {
-        backend.discover();
+        backend_init.get_initialized().discover();
     });
 }
 
-fn downloader_module(player_bus: PlayerBus, playlist: Playlist, backend: Backend) {
+fn downloader_module(playlist: Playlist, backend_init: BackendInitialization) {
     thread::spawn(move || {
-        player_bus.wait_for_session();
+        let backend = backend_init.get_initialized();
 
         playlist.buffer_worker(|track| {
             match backend.download(track) {
@@ -91,17 +91,16 @@ fn main() {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let mut config = Config::init_default_path();
+    let config = Config::init_default_path();
     let playlist = Playlist::new();
     let player_bus = PlayerBus::new();
-    let backend = Backend::init(
-        TidalBackend::init(&mut config, player_bus.clone()), player_bus.clone()
-    );
 
-    session_module(config.clone(), player_bus.clone());
-    discovery_module(backend.clone());
-    service_module(backend.clone(), playlist.clone());
-    downloader_module(player_bus.clone(), playlist.clone(), backend);
+    let backend_init = BackendInitialization::new(config.clone(), player_bus.clone());
+
+    session_module(backend_init.clone());
+    discovery_module(backend_init.clone());
+    service_module(backend_init.clone(), playlist.clone());
+    downloader_module(playlist.clone(), backend_init.clone());
     server_module(player_bus.clone());
 
     let player = player_module(playlist.clone(), player_bus.clone());

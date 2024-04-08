@@ -25,11 +25,16 @@ impl SessionGui {
 
 impl Screen for SessionGui {
     fn update(&mut self, state: State) {
-        if self.device_login_link.is_none() && state.device_login_link.is_some() {
-            let code = qrcode_generator::to_png_to_vec(state.device_login_link.clone().unwrap().as_bytes(), QrCodeEcc::Low, 300).unwrap();
-            self.qrcode_image = Some(Texture2D::from_file_with_format(&code, None));
+        match state.backends.tidal {
+            crate::playerbus::BackendState::WaitingForLoginByLink(login_link) => {
+                if self.device_login_link.is_none() {
+                    let code = qrcode_generator::to_png_to_vec(login_link.as_bytes(), QrCodeEcc::Low, 300).unwrap();
+                    self.qrcode_image = Some(Texture2D::from_file_with_format(&code, None));
+                }
+                self.device_login_link = Some(login_link);
+            },
+            _ => {},
         }
-        self.device_login_link = state.device_login_link;
     }
 
     fn render(&self, ui: &super::Gui) {
