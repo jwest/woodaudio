@@ -59,6 +59,28 @@ impl Tidal {
 
 #[derive(Debug)]
 #[derive(Clone)]
+pub struct Spotify {
+    pub username: String,
+    pub password: String,
+}
+
+impl Spotify {
+    fn init(conf: &Ini) -> Self {
+        let properties = conf.section(Some("Spotify"));
+        Self {
+            username: properties.get_string("username"),
+            password: properties.get_string("password"),
+        }
+    }
+    fn prepare_to_save(&self, ini: &mut Ini) {
+        ini.with_section(Some("Spotify"))
+            .set("username", self.username.clone())
+            .set("password", self.password.clone());
+    }
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct Gui {
     pub enabled: bool,
     pub systray_enabled: bool,
@@ -124,6 +146,7 @@ impl ExporterFTP {
 pub struct Config {
     path: PathBuf,
     pub tidal: Tidal,
+    pub spotify: Spotify,
     pub gui: Gui,
     pub exporter_ftp: ExporterFTP,
 }
@@ -139,6 +162,7 @@ impl Config {
         Self { 
             path,
             tidal: Tidal::init(&conf),
+            spotify: Spotify::init(&conf),
             gui: Gui::init(&conf), 
             exporter_ftp: ExporterFTP::init(&conf),
         }
@@ -146,6 +170,7 @@ impl Config {
     pub fn save(&self) {
         let mut conf = Ini::new();
         self.tidal.prepare_to_save(&mut conf);
+        self.spotify.prepare_to_save(&mut conf);
         self.gui.prepare_to_save(&mut conf);
         self.exporter_ftp.prepare_to_save(&mut conf);
         conf.write_to_file(self.path.clone()).unwrap();

@@ -4,14 +4,15 @@ use log::{debug, error, info};
 use secular::normalized_lower_lay_string;
 
 use crate::{backend::cover::CoverProcessor, config::Config, playlist::{BufferedTrack, Cover, Track}};
-use super::{storage::{CacheRead, Exporter, FtpStorage}, tidal::TidalBackend, Backend};
+use super::{spotify::SpotifyBackend, storage::{CacheRead, Exporter, FtpStorage}, tidal::TidalBackend, Backend};
 
 #[derive(Clone)]
 pub struct Downloader {
     storage: Arc<Mutex<Option<FtpStorage>>>,
     display_cover_background: bool,
     display_cover_foreground: bool,
-    backend: TidalBackend,
+    // backend: TidalBackend,
+    backend: SpotifyBackend,
 }
 
 impl Track {
@@ -21,7 +22,7 @@ impl Track {
 }
 
 impl Downloader {
-    pub fn init(config: &Config, backend: TidalBackend) -> Self {
+    pub fn init(config: &Config, backend: SpotifyBackend) -> Self {
         let storage = match config.exporter_ftp.enabled {
             true => Some(FtpStorage::init(config.exporter_ftp.clone())),
             false => None,

@@ -4,9 +4,10 @@ use bytes::Bytes;
 
 use crate::{config::Config, playerbus::{self, PlayerBus}, playlist::{BufferedTrack, Playlist, Track}};
 
-use self::{downloader::Downloader, tidal::TidalBackend};
+use self::{downloader::Downloader, spotify::SpotifyBackend, tidal::TidalBackend};
 
 mod tidal;
+mod spotify;
 mod downloader;
 mod cover;
 mod storage;
@@ -39,10 +40,11 @@ impl BackendInitialization {
         }
     }
     pub fn initialization(&self) {
-        let tidal = TidalBackend::init(&mut self.config.clone(), self.playerbus.clone());
+        // let tidal = TidalBackend::init(&mut self.config.clone(), self.playerbus.clone());
+        let spotify = SpotifyBackend::init(&mut self.config.clone(), self.playerbus.clone());
         let mut backend = self.backend.lock().unwrap();
 
-        *backend = Some(BackendService::init(&self.config, tidal, self.playerbus.clone()));
+        *backend = Some(BackendService::init(&self.config, spotify, self.playerbus.clone()));
     }
     pub fn get_initialized(&self) -> BackendService {
         loop {
@@ -59,21 +61,23 @@ impl BackendInitialization {
 
 #[derive(Clone)]
 pub struct BackendService {
-    tidal: TidalBackend,
+    // tidal: TidalBackend,
+    spotify: SpotifyBackend,
     downloader: Downloader,
     playerbus: Arc<Mutex<PlayerBus>>,
 }
 
 impl BackendService {
-    fn init(config: &Config, tidal: TidalBackend, playerbus: PlayerBus) -> Self {
+    fn init(config: &Config, spotify: SpotifyBackend, playerbus: PlayerBus) -> Self {
         Self { 
-            tidal: tidal.clone(),
+            // tidal: tidal.clone(),
+            spotify: spotify.clone(),
             playerbus: Arc::new(Mutex::new(playerbus)),
-            downloader: Downloader::init(config, tidal),
+            downloader: Downloader::init(config, spotify),
         }
     }
     pub fn discover(&self) {
-        self.tidal.discovery(move |track| {
+        self.spotify.discovery(move |track| {
             self.playerbus.lock().unwrap().publish_message(playerbus::Message::TrackDiscovered(track));
         });
     }
@@ -108,19 +112,19 @@ impl BackendService {
                     playlist.push_force(tracks);
                 },
                 Some(playerbus::Command::Radio(track_id)) => {
-                    let _ = self.tidal.discovery_radio(&track_id, discovery_fn);
+                    let _ = self.spotify.discovery_radio(&track_id, discovery_fn);
                 },
                 Some(playerbus::Command::PlayTrackForce(track_id)) => {
-                    let _ = self.tidal.discovery_track(&track_id, discovery_fn);
+                    let _ = self.spotify.discovery_track(&track_id, discovery_fn);
                 },
                 Some(playerbus::Command::PlayAlbumForce(track_id)) => {
-                    let _ = self.tidal.discovery_album(&track_id, discovery_fn);
+                    let _ = self.spotify.discovery_album(&track_id, discovery_fn);
                 },
                 Some(playerbus::Command::PlayArtistForce(track_id)) => {
-                    let _ = self.tidal.discovery_artist(&track_id, discovery_fn);
+                    let _ = self.spotify.discovery_artist(&track_id, discovery_fn);
                 },
                 Some(playerbus::Command::Like(track_id)) => {
-                    let _ = self.tidal.add_track_to_favorites(&track_id);
+                    let _ = self.spotify.add_track_to_favorites(&track_id);
                     self.playerbus.lock().unwrap().publish_message(playerbus::Message::TrackAddedToFavorites);
                 },
                 _ => {},

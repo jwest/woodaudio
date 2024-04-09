@@ -16,8 +16,9 @@ fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
 }
 
 fn source(track: BufferedTrack) -> Option<Decoder<BufReader<std::io::Cursor<bytes::Bytes>>>> {
-    let source_result = Decoder::new_flac(BufReader::with_capacity(4_194_304, Cursor::new(track.stream)));
-
+    // let source_result = Decoder::new_flac(BufReader::with_capacity(4_194_304, Cursor::new(track.stream)));
+    // let source_result = Decoder::new_vorbis(BufReader::with_capacity(4_194_304, Cursor::new(track.stream)));
+    let source_result = Decoder::new(BufReader::with_capacity(4_194_304, Cursor::new(track.stream)));
     match source_result {
         Ok(file) => Some(file),
         Err(err) => {
