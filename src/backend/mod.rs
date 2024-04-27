@@ -109,24 +109,28 @@ impl BackendService {
                 },
                 Some(playerbus::Command::Radio(track_id)) => {
                     let _ = self.tidal.discovery_radio(&track_id, discovery_fn);
+                    self.playerbus.lock().unwrap().publish_message(playerbus::Message::RadioTracksLoaded);
                 },
                 Some(playerbus::Command::PlayTrackForce(track_id)) => {
                     let _ = self.tidal.discovery_track(&track_id, discovery_fn);
+                    self.playerbus.lock().unwrap().publish_message(playerbus::Message::TrackLoaded);
                 },
                 Some(playerbus::Command::PlayAlbumForce(track_id)) => {
                     let _ = self.tidal.discovery_album(&track_id, discovery_fn);
+                    self.playerbus.lock().unwrap().publish_message(playerbus::Message::AlbumTracksLoaded);
                 },
                 Some(playerbus::Command::PlayArtistForce(track_id)) => {
                     let _ = self.tidal.discovery_artist(&track_id, discovery_fn);
+                    self.playerbus.lock().unwrap().publish_message(playerbus::Message::ArtistTracksLoaded);
                 },
                 Some(playerbus::Command::Like(track_id)) => {
                     let _ = self.tidal.add_track_to_favorites(&track_id);
                     self.playerbus.lock().unwrap().publish_message(playerbus::Message::TrackAddedToFavorites);
                 },
-                _ => {},
+                _ => {
+                    std::thread::sleep(Duration::from_millis(500));
+                },
             }
-
-            std::thread::sleep(Duration::from_millis(500));
         }
     }
 }

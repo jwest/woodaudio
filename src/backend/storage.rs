@@ -23,12 +23,15 @@ pub struct FtpStorage {
 
 impl FtpStorage {
     pub fn init(config: ExporterFTP) -> Self {
+        let client = Self::connect_client(config.clone());
+        Self { client, cache_read: config.cache_read, output_path: config.share }
+    }
+    pub fn connect_client(config: ExporterFTP) -> FtpStream {
         let mut client = FtpStream::connect(config.server).unwrap();
         client.login(config.username, config.password).unwrap();
         client.transfer_type(FileType::Binary).unwrap();
         client.set_mode(suppaftp::Mode::ExtendedPassive);
-
-        Self { client, cache_read: config.cache_read, output_path: config.share }
+        client
     }
     fn file_name_with_create_dir(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<String, Box<dyn Error>> {
         if let Some(dir) = output_dir {
@@ -64,7 +67,7 @@ impl CacheRead for FtpStorage {
         let mut reader = self.client.retr_as_stream(file_name.clone())?;
 
         let mut output = bytes::BytesMut::new();
-        reader.read_exact(&mut output)?;
+        reader.read(&mut output)?;
         drop(reader);
 
         if output.is_empty() {

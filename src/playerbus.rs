@@ -68,6 +68,11 @@ pub enum Message {
     TidalBackendStarted,
     TidalBackendLoginLinkCreated(String),
     TidalBackendInitialized,
+
+    RadioTracksLoaded,
+    TrackLoaded,
+    AlbumTracksLoaded,
+    ArtistTracksLoaded,
 }
 
 #[derive(Debug)]
@@ -275,6 +280,10 @@ impl PlayerBus {
             Message::TidalBackendStarted => State { backends: BackendsState { tidal: BackendState::Initialization, ..prev_state.backends }, ..prev_state },
             Message::TidalBackendLoginLinkCreated(login_link) =>  State { backends: BackendsState { tidal: BackendState::WaitingForLoginByLink(login_link), ..prev_state.backends }, ..prev_state },
             Message::TidalBackendInitialized => { self.publish_command(Command::ShowScreen("/player".to_string())); State { backends: BackendsState { tidal: BackendState::Ready, ..prev_state.backends }, ..prev_state }},
+            Message::RadioTracksLoaded => { self.publish_command(Command::Next); prev_state },
+            Message::TrackLoaded => { self.publish_command(Command::Next); prev_state },
+            Message::AlbumTracksLoaded => { self.publish_command(Command::Next); prev_state },
+            Message::ArtistTracksLoaded => { self.publish_command(Command::Next); prev_state },
         };
 
         *state = next_state;

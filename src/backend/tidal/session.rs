@@ -9,7 +9,7 @@ use std::time::Duration;
 use std::{time, thread};
 use log::info;
 
-use crate::config::Config;
+use crate::config::{Config, Tidal};
 use crate::playerbus::{Message, PlayerBus};
 
 #[derive(Debug)]
@@ -49,21 +49,36 @@ struct DeviceAuthorization {
     // interval: u16,
 }
 
+#[derive(Debug)]
+#[derive(Clone)]
+#[derive(Deserialize)]
+struct RefreshAuthorization {
+    token_type: String,
+    access_token: String,
+}
+
+impl Tidal {
+    pub fn token(&self) -> String {
+        format!("{} {}", self.token_type, self.access_token)
+    }
+}
+
+const CLIENT_ID: &'static str = "zU4XHVVkc2tDPo4t";
+const CLIENT_SECRET: &'static str = "VJKhDFqJPqvsPVNBV6ukXTJmwlvbttP7wlMlrc72se4%3D";
+
 impl DeviceAuthorization {
     fn format_url(&self) -> String {
         format!("https://{}", self.verification_uri_complete)
     }
     fn wait_for_link(&self, config: &mut Config) -> Result<Session, Box<dyn Error>> {
-        let client_id = "zU4XHVVkc2tDPo4t";
-        let client_secret = "VJKhDFqJPqvsPVNBV6ukXTJmwlvbttP7wlMlrc72se4%3D";
         let client = reqwest::blocking::Client::builder().build()?;
 
         for _ in 0..60 {
             thread::sleep(Duration::from_secs(2));
 
             let params = &[
-                ("client_id", client_id),
-                ("client_secret", client_secret),
+                ("client_id", CLIENT_ID),
+                ("client_secret", CLIENT_SECRET),
                 ("device_code", &self.device_code),
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                 ("scope", "r_usr w_usr w_sub"),
@@ -123,15 +138,14 @@ impl Session {
             Err(_) => Session::setup(config, player_bus),
         }
     }
-    fn try_from_file(config: &Config) -> Result<Session, Box<dyn Error>> {
-        Session::init(format!("{} {}", config.tidal.token_type, config.tidal.access_token))
+    fn try_from_file(config: &mut Config) -> Result<Session, Box<dyn Error>> {
+        Session::init(config)
     }
     fn login_link() -> Result<DeviceAuthorization, Box<dyn Error>> {
-        let client_id = "zU4XHVVkc2tDPo4t";
         let client = reqwest::blocking::Client::builder()
             .build()?;
         let res = client.post("https://auth.tidal.com:443/v1/oauth2/device_authorization")
-            .form(&[("client_id", client_id), ("scope", "r_usr+w_usr+w_sub")])
+            .form(&[("client_id", CLIENT_ID), ("scope", "r_usr+w_usr+w_sub")])
             .send()?;
 
         let device_auth_response = res.json::<DeviceAuthorization>()?;
@@ -139,9 +153,9 @@ impl Session {
 
         Ok(device_auth_response)
     }
-    fn init(token: String) -> Result<Session, Box<dyn Error>> {
+    fn init(config: &mut Config) -> Result<Session, Box<dyn Error>> {
         let mut headers = header::HeaderMap::new();
-        headers.insert(header::AUTHORIZATION, header::HeaderValue::from_str(token.as_str()).unwrap());
+        headers.insert(header::AUTHORIZATION, header::HeaderValue::from_str(config.tidal.token().as_str()).unwrap());
     
         let client = reqwest::blocking::Client::builder()
             .default_headers(headers)
@@ -157,14 +171,36 @@ impl Session {
                 session_id: session.session_id, 
                 country_code: session.country_code, 
                 user_id: session.user_id, 
-                token: token.clone(),
+                token: config.tidal.token().clone(),
                 api_path: "https://api.tidal.com/v1".to_string(),
             });
         }
 
-        info!("[Session] outdated, refresh needed {:?}", res);
+        info!("[Session] outdated, refresh needed, {:?}", res);
 
-        Err("Session is outdated".into())
+        Self::refresh_token(config)?;
+        Self::init(config)
+    }
+    fn refresh_token(config: &mut Config) -> Result<(), Box<dyn Error>> {
+        let client = reqwest::blocking::Client::builder()
+            .build()?;
+        let res = client.post("https://auth.tidal.com:443/v1/oauth2/token")
+            .form(&[
+                ("grant_type", "refresh_token"),
+                ("refresh_token", config.tidal.refresh_token.as_str()),
+                ("client_id", CLIENT_ID),
+                ("client_secret", CLIENT_SECRET)
+            ])
+            .send()?;
+
+        let refresh_auth_response = res.json::<RefreshAuthorization>()?;
+
+        config.tidal.token_type = refresh_auth_response.token_type;
+        config.tidal.access_token = refresh_auth_response.access_token;
+        config.save();
+        info!("[Session] refreshed with success");
+
+        Ok(())
     }
     fn check_internet_connection() -> bool {
         info!("Wait for internet connection to tidal... ");

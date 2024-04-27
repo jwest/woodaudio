@@ -46,45 +46,21 @@ impl Backend for TidalBackend {
     fn discovery_track(&self, track_id: &str, discovery_fn: impl Fn(Vec<Track>)) {
         info!("[Discovery] Discover radio for track: {}", track_id);
         let radio = self.session.get_track_radio(track_id).unwrap();
-        let mut tracks: Vec<Track> = vec![];
-
-        if let serde_json::Value::Array(items) = &radio["items"] {
-            for item in items {
-                if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                    tracks.push(Track::build_from_json(item.to_owned()));
-                }
-            }
-        }
+        let tracks = Self::parse_tracks(&radio["items"]);
 
         info!("[Discovery] Discover tracks: {:?}", tracks);
         discovery_fn(tracks);
     }
     fn discovery_album(&self, album_id: &str, discovery_fn: impl Fn(Vec<Track>)) {
         let album = self.session.get_album(album_id).unwrap();
-        let mut tracks: Vec<Track> = vec![];
-
-        if let serde_json::Value::Array(items) = &album["items"] {
-            for item in items {
-                if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                    tracks.push(Track::build_from_json(item.to_owned()));
-                }
-            }
-        }
+        let tracks = Self::parse_tracks(&album["items"]);
 
         info!("[Discovery] Discover tracks {:?} from album: {}", tracks, album_id);
         discovery_fn(tracks);
     }
     fn discovery_artist(&self, artist_id: &str, discovery_fn: impl Fn(Vec<Track>)) {
         let artist = self.session.get_artist(artist_id).unwrap();
-        let mut tracks: Vec<Track> = vec![];
-
-        if let serde_json::Value::Array(items) = &artist["items"] {
-            for item in items {
-                if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                    tracks.push(Track::build_from_json(item.to_owned()));
-                }
-            }
-        }
+        let tracks = Self::parse_tracks(&artist["items"]);
 
         info!("[Discovery] Discover tracks {:?} from artist: {}", tracks, artist_id);
         discovery_fn(tracks);
@@ -98,7 +74,7 @@ impl TidalBackend {
     fn discover_favorities_tracks(&self, session: &Session, discovery_fn: impl Fn(Track)) -> Result<(), Box<dyn Error>> {
         let v = session.get_favorites()?;
 
-        if let serde_json::Value::Array(items) = &v["items"] {
+        if let Value::Array(items) = &v["items"] {
             let mut rng = thread_rng();
             let mut shuffled_items = items.clone();
             shuffled_items.shuffle(&mut rng);
@@ -130,6 +106,20 @@ impl TidalBackend {
             }
 
         Ok(())
+    }
+
+    fn parse_tracks(items: &Value) -> Vec<Track> {
+        let mut tracks: Vec<Track> = vec![];
+
+        if let Value::Array(items) = items {
+            for item in items {
+                if item["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
+                    tracks.push(Track::build_from_json(item.to_owned()));
+                }
+            }
+        }
+
+        tracks
     }
 }
 
