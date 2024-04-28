@@ -31,7 +31,7 @@ pub struct Actions {
 
 impl Actions {
     pub fn init(config_path: String) -> Self {
-        let config_raw = fs::read_to_string(config_path).expect("Couldn't find or load actions config file.");
+        let config_raw = fs::read_to_string(config_path).unwrap_or(serde_json::to_string(&Actions { actions: vec![] }).unwrap());
         serde_json::from_str(config_raw.as_str()).expect("Error on deserialize actions config file")
     }
 }

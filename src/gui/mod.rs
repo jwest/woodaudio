@@ -11,6 +11,8 @@ use self::session::SessionGui;
 pub mod session;
 pub mod actions;
 pub mod player;
+
+#[cfg(target_os = "macos")]
 pub mod systray;
 
 pub trait Screen {

@@ -1,6 +1,10 @@
 use backend::BackendInitialization;
 use env_logger::Target;
-use gui::{systray::Systray, Gui};
+use gui::Gui;
+
+#[cfg(target_os = "macos")]
+use gui::systray;
+
 use log::error;
 use macroquad::window::Conf;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
