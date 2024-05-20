@@ -4,11 +4,13 @@ use log::{debug, error, info};
 use secular::normalized_lower_lay_string;
 
 use crate::{backend::cover::CoverProcessor, config::Config, playlist::{BufferedTrack, Cover, Track}};
+use crate::backend::storage::FileStorage;
 use super::{storage::{CacheRead, Exporter, FtpStorage}, tidal::TidalBackend, Backend};
 
 #[derive(Clone)]
 pub struct Downloader {
-    storage: Arc<Mutex<Option<FtpStorage>>>,
+    storage_file: Arc<Mutex<Option<FileStorage>>>,
+    storage_ftp: Arc<Mutex<Option<FtpStorage>>>,
     display_cover_background: bool,
     display_cover_foreground: bool,
     backend: TidalBackend,
@@ -22,13 +24,19 @@ impl Track {
 
 impl Downloader {
     pub fn init(config: &Config, backend: TidalBackend) -> Self {
-        let storage = match config.exporter_ftp.enabled {
+        let storage_file = match config.exporter_file.enabled {
+            true => Some(FileStorage::init(config.exporter_file.clone())),
+            false => None,
+        };
+
+        let storage_ftp = match config.exporter_ftp.enabled {
             true => Some(FtpStorage::init(config.exporter_ftp.clone())),
             false => None,
         };
 
-        Downloader { 
-            storage: Arc::new(Mutex::new(storage)),
+        Downloader {
+            storage_file: Arc::new(Mutex::new(storage_file)),
+            storage_ftp: Arc::new(Mutex::new(storage_ftp)),
             display_cover_background: config.gui.display_cover_background, 
             display_cover_foreground: config.gui.display_cover_foreground,
             backend,
@@ -36,17 +44,29 @@ impl Downloader {
     }
     
     pub fn download_file(&self, track: Track) -> Result<BufferedTrack, Box<dyn Error>> {
-        if let Some(ftp_storage) = self.storage.lock().unwrap().as_mut() {
+        if let Some(storage_file) = self.storage_file.lock().unwrap().as_mut() {
+            match storage_file.read_file(&track.file_name(), None) {
+                Ok(Some(file)) => {
+                    info!("[Storage] cache exists {:?}", track);
+                    return Ok(BufferedTrack {
+                        track: track.clone(),
+                        stream: file.clone(),
+                        cover: self.download_album_cover(track.album_image).unwrap_or_else(|_| Cover::empty()),
+                    })
+                },
+                _ => {
+                    info!("[Storage] cache empty or error for {:?}", track);
+                },
+            }
+        }
+        if let Some(ftp_storage) = self.storage_ftp.lock().unwrap().as_mut() {
             match ftp_storage.read_file(&track.file_name(), None) {
                 Ok(Some(file)) => {
                     info!("[Storage] cache exists {:?}", track);
                     return Ok(BufferedTrack {
                         track: track.clone(),
                         stream: file.clone(),
-                        cover: match self.download_album_cover(track.album_image) {
-                            Ok(cover) => cover,
-                            Err(_) => Cover::empty(),
-                        },
+                        cover: self.download_album_cover(track.album_image).unwrap_or_else(|_| Cover::empty()),
                     })
                 },
                 _ => {
@@ -56,15 +76,27 @@ impl Downloader {
         }
         for _ in 1..5 {
             let bytes_response = self.backend.get_track(track.id.clone())?;
-    
-            if let Some(ftp_storage) = self.storage.lock().unwrap().as_mut() {
+
+            if let Some(storage_file) = self.storage_file.lock().unwrap().as_mut() {
                 let export_bytes = bytes_response.clone();
-                match ftp_storage.write_file(export_bytes, &track.file_name(), None) {
+                match storage_file.write_file(export_bytes, &track.file_name(), None) {
                     Ok(()) => {
-                        info!("[Storage] cache file wrote, track: {:?}", track);
+                        info!("[Storage File] cache file wrote, track: {:?}", track);
                     },
                     Err(err) => {
-                        error!("[Storage] cache file wrote error, track: {:?}, error: {:?}", track, err);
+                        error!("[Storage File] cache file wrote error, track: {:?}, error: {:?}", track, err);
+                    },
+                }
+            }
+
+            if let Some(storage_ftp) = self.storage_ftp.lock().unwrap().as_mut() {
+                let export_bytes = bytes_response.clone();
+                match storage_ftp.write_file(export_bytes, &track.file_name(), None) {
+                    Ok(()) => {
+                        info!("[Storage FTP] cache file wrote, track: {:?}", track);
+                    },
+                    Err(err) => {
+                        error!("[Storage FTP] cache file wrote error, track: {:?}, error: {:?}", track, err);
                     },
                 }
             }
@@ -72,10 +104,7 @@ impl Downloader {
             return Ok(BufferedTrack {
                 track: track.clone(),
                 stream: bytes_response,
-                cover: match self.download_album_cover(track.album_image) {
-                    Ok(cover) => cover,
-                    Err(_) => Cover::empty(),
-                },
+                cover: self.download_album_cover(track.album_image).unwrap_or_else(|_| Cover::empty()),
             })
         }
     

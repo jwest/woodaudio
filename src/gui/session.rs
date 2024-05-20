@@ -52,4 +52,6 @@ impl Screen for SessionGui {
     fn nav_id(&self) -> String {
         "/session".to_string()
     }
+
+    fn on_show(&mut self) {}
 }

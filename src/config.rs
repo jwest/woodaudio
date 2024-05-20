@@ -61,6 +61,7 @@ impl Tidal {
 #[derive(Clone)]
 pub struct Gui {
     pub enabled: bool,
+    pub fullscreen: bool,
     pub systray_enabled: bool,
     pub display_cover_background: bool,
     pub display_cover_foreground: bool,
@@ -71,6 +72,7 @@ impl Gui {
         let properties = conf.section(Some("GUI"));
         Self {
             enabled: properties.get_bool_with_default("enabled", true),
+            fullscreen: properties.get_bool_with_default("fullscreen", true),
             systray_enabled: properties.get_bool_with_default("systray_enabled", true),
             display_cover_background: properties.get_bool_with_default("display_cover_background", true),
             display_cover_foreground: properties.get_bool_with_default("display_cover_foreground", true),
@@ -79,6 +81,7 @@ impl Gui {
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("GUI"))
             .set("enabled", bool_to_string(self.enabled))
+            .set("fullscreen", bool_to_string(self.fullscreen))
             .set("systray_enabled", bool_to_string(self.enabled))
             .set("display_cover_background", bool_to_string(self.display_cover_background))
             .set("display_cover_foreground", bool_to_string(self.display_cover_foreground));
@@ -94,6 +97,28 @@ pub struct ExporterFTP {
     pub password: String,
     pub username: String,
     pub cache_read: bool,
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct ExporterFile {
+    pub enabled: bool,
+    pub path: String,
+}
+
+impl crate::config::ExporterFile {
+    fn init(conf: &Ini) -> Self {
+        let properties = conf.section(Some("ExporterFile"));
+        Self {
+            enabled: properties.get_bool("enabled"),
+            path: properties.get_string("path"),
+        }
+    }
+    fn prepare_to_save(&self, ini: &mut Ini) {
+        ini.with_section(Some("ExporterFile"))
+            .set("enabled", bool_to_string(self.enabled))
+            .set("server", self.path.clone());
+    }
 }
 
 impl ExporterFTP {
@@ -125,12 +150,13 @@ pub struct Config {
     path: PathBuf,
     pub tidal: Tidal,
     pub gui: Gui,
+    pub exporter_file: ExporterFile,
     pub exporter_ftp: ExporterFTP,
 }
 
 impl Config {
     pub fn init_default_path() -> Self {
-        let config_path = home::home_dir().unwrap().join("config.ini");
+        let config_path = home::home_dir().unwrap().join(".config/woodaudio/config.ini");
         Self::init(config_path)
     }
     pub fn init(path: PathBuf) -> Self {
@@ -139,7 +165,8 @@ impl Config {
         Self { 
             path,
             tidal: Tidal::init(&conf),
-            gui: Gui::init(&conf), 
+            gui: Gui::init(&conf),
+            exporter_file: ExporterFile::init(&conf),
             exporter_ftp: ExporterFTP::init(&conf),
         }
     }
@@ -147,6 +174,7 @@ impl Config {
         let mut conf = Ini::new();
         self.tidal.prepare_to_save(&mut conf);
         self.gui.prepare_to_save(&mut conf);
+        self.exporter_file.prepare_to_save(&mut conf);
         self.exporter_ftp.prepare_to_save(&mut conf);
         conf.write_to_file(self.path.clone()).unwrap();
     }

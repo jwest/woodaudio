@@ -135,6 +135,28 @@ impl Button for ActionsButton {
     }
 }
 
+struct LikedAlbumsButton {
+    player_bus: PlayerBus,
+}
+
+impl LikedAlbumsButton {
+    fn new(player_bus: PlayerBus) -> Self {
+        Self {
+            player_bus,
+        }
+    }
+}
+
+impl Button for LikedAlbumsButton {
+    fn label(&self, _: State) -> String {
+        "".to_string()
+    }
+
+    fn action(&self, _: State) {
+        self.player_bus.publish_message(Message::UserClickLikedAlbumsButton);
+    }
+}
+
 pub struct Buttons {
     buttons: Vec<Box<dyn Button + Send>>,
     size: f32,
@@ -180,6 +202,7 @@ impl Player {
             Box::new(LikeButton::new(player_bus.clone())),
             Box::new(TrackRadioButton::new(player_bus.clone())),
             Box::new(ActionsButton::new(player_bus.clone())),
+            Box::new(LikedAlbumsButton::new(player_bus.clone())),
         ]);
 
         let cover_foreground_path = "../static/sample_cover.jpg-foreground.png".to_string();
@@ -336,6 +359,8 @@ impl Screen for Player {
     fn nav_id(&self) -> String {
         "/player".to_owned()
     }
+
+    fn on_show(&mut self) {}
 
     fn update(&mut self, state: State) {
         self.state = state.clone();

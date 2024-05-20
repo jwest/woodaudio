@@ -39,7 +39,7 @@ fn service_module(backend_init: BackendInitialization, playlist: Playlist) {
 
 fn discovery_module(backend_init: BackendInitialization) {
     thread::spawn(move || {
-        backend_init.get_initialized().discover();
+        // backend_init.get_initialized().discover();
     });
 }
 
@@ -78,10 +78,10 @@ async fn gui_module(player_bus: PlayerBus) {
         .await;
 }
 
-fn conf() -> Conf {
+fn conf(config: Config) -> Conf {
     Conf {
       window_title: "Woodaudio".to_string(),
-      fullscreen: true,
+      fullscreen: config.gui.fullscreen,
       window_height: 600,
       window_width: 1024,
       window_resizable: false,
@@ -115,7 +115,7 @@ fn main() {
     }
 
     if config.gui.enabled {
-        macroquad::Window::from_config(conf(), gui_module(player_bus.clone()));
+        macroquad::Window::from_config(conf(config), gui_module(player_bus.clone()));
     } else {
         let _ = player.join();
     }

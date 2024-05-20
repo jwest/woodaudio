@@ -63,6 +63,7 @@ pub enum Message {
     UserPlayArtist(String),
 
     UserClickActions,
+    UserClickLikedAlbumsButton,
     UserClickBackToPlayer,
 
     TidalBackendStarted,
@@ -277,6 +278,7 @@ impl PlayerBus {
             Message::TracksDiscoveredWithHighPriority(tracks) => { self.publish_command(Command::AddTracksToPlaylistForce(tracks)); prev_state },
             Message::UserClickActions => { self.publish_command(Command::ShowScreen("/actions".to_string())); prev_state },
             Message::UserClickBackToPlayer => { self.publish_command(Command::ShowScreen("/player".to_string())); prev_state },
+            Message::UserClickLikedAlbumsButton => { self.publish_command(Command::ShowScreen("/browse".to_string())); prev_state },
             Message::TidalBackendStarted => State { backends: BackendsState { tidal: BackendState::Initialization, ..prev_state.backends }, ..prev_state },
             Message::TidalBackendLoginLinkCreated(login_link) =>  State { backends: BackendsState { tidal: BackendState::WaitingForLoginByLink(login_link), ..prev_state.backends }, ..prev_state },
             Message::TidalBackendInitialized => { self.publish_command(Command::ShowScreen("/player".to_string())); State { backends: BackendsState { tidal: BackendState::Ready, ..prev_state.backends }, ..prev_state }},

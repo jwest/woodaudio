@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use macroquad::prelude::*;
+use crate::gui::browse::Browse;
 
 use crate::playerbus::{BroadcastChannel, Command, PlayerBus, State};
 
@@ -14,9 +15,11 @@ pub mod player;
 
 #[cfg(target_os = "macos")]
 pub mod systray;
+mod browse;
 
 pub trait Screen {
     fn nav_id(&self) -> String;
+    fn on_show(&mut self);
     fn update(&mut self, state: State);
     fn render(&self, ui: &Gui);
 }
@@ -44,6 +47,7 @@ impl ScreenRegistry {
                     self.path = path;
                     self.active = i;
                     debug!("[ScreenRegistry] navigated to {}, {:?}", i, screen.lock().unwrap().nav_id());
+                    screen.lock().unwrap().on_show();
                 },
                 None => error!("[ScreenRegistry] Screen not found: {}", path),
             }
@@ -89,7 +93,8 @@ impl Gui {
             screen_registry: ScreenRegistry::init(vec![
                 Box::new(SessionGui::init()),
                 Box::new(Player::init(player_bus)),
-                Box::new(Actions::init(home::home_dir().unwrap().join("actions.json").to_str().unwrap().to_string())),
+                Box::new(Actions::init(home::home_dir().unwrap().join(".config/woodaudio/actions.json").to_str().unwrap().to_string())),
+                Box::new(Browse::init()),
             ]),
             fonts,
         }
@@ -119,7 +124,6 @@ impl Gui {
         loop {
             self.update_state().await;
             self.render_screen();
-            
             next_frame().await;
             std::thread::sleep(Duration::from_millis(20));
         }

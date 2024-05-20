@@ -131,4 +131,6 @@ impl Screen for Actions {
     fn nav_id(&self) -> String {
         "/actions".to_owned()
     }
+
+    fn on_show(&mut self) {}
 }

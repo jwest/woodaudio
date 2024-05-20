@@ -1,10 +1,11 @@
-use std::{error::Error, io::Read};
+use std::{error::Error, fs, io::Read};
+use std::path::PathBuf;
 
-use bytes::Buf;
+use bytes::{Buf, Bytes};
 use log::info;
 use suppaftp::{types::FileType, FtpStream};
 
-use crate::config::ExporterFTP;
+use crate::config::{ExporterFile, ExporterFTP};
 
 
 pub trait CacheRead {
@@ -26,7 +27,7 @@ impl FtpStorage {
         let client = Self::connect_client(config.clone());
         Self { client, cache_read: config.cache_read, output_path: config.share }
     }
-    pub fn connect_client(config: ExporterFTP) -> FtpStream {
+    fn connect_client(config: ExporterFTP) -> FtpStream {
         let mut client = FtpStream::connect(config.server).unwrap();
         client.login(config.username, config.password).unwrap();
         client.transfer_type(FileType::Binary).unwrap();
@@ -77,5 +78,38 @@ impl CacheRead for FtpStorage {
         info!("[Cache] file readed from ftp: {:?} {:?}", file_name, output);
 
         Ok(Some(output.into()))
+    }
+}
+
+#[derive(Clone)]
+pub struct FileStorage {
+    path: PathBuf,
+}
+
+impl FileStorage {
+    pub fn init(config: ExporterFile) -> Self {
+        Self { path: PathBuf::from(config.path) }
+    }
+    fn file_name_with_create_dir(&mut self, output_file_name: &str) -> Result<String, Box<dyn Error>> {
+        fs::create_dir_all(&self.path)?;
+        Ok(format!("{}/{output_file_name}", &self.path.to_str().unwrap()))
+    }
+}
+
+impl CacheRead for FileStorage {
+    fn read_file(&mut self, output_file_name: &str, _output_dir: Option<&str>) -> Result<Option<Bytes>, Box<dyn Error>> {
+        let file_name = self.file_name_with_create_dir(output_file_name)?;
+        match fs::read(file_name) {
+            Ok(file) => Ok(Some(bytes::Bytes::from(file))),
+            Err(_) => Ok(None)
+        }
+    }
+}
+
+impl Exporter for FileStorage {
+    fn write_file(&mut self, source: Bytes, output_file_name: &str, _output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
+        let file_name = self.file_name_with_create_dir(output_file_name)?;
+        fs::write(file_name, source)?;
+        Ok(())
     }
 }
