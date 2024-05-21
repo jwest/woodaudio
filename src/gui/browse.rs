@@ -1,14 +1,14 @@
 use std::collections::HashMap;
-use futures::{executor, StreamExt};
-use log::{debug, error};
-use macroquad::color::{BLACK, Color, WHITE, YELLOW};
+use futures::executor;
+use log::debug;
+use macroquad::color::{Color, WHITE};
 use macroquad::input::{is_mouse_button_pressed, mouse_position, MouseButton};
 use macroquad::math::Rect;
 use macroquad::prelude::{draw_rectangle, draw_text_ex, draw_texture_ex, DrawTextureParams, get_text_center, ImageFormat, is_mouse_button_down, load_texture, screen_width, TextParams, Texture2D};
 use crate::gui::{Gui, Screen};
 use crate::playerbus::{Message, PlayerBus, State};
 use crate::playerbus::Message::CoverNeeded;
-use crate::playlist::{PlayableItem};
+use crate::playlist::{PlayableItem, PlayableItemMediaType};
 
 #[derive(Clone)]
 #[derive(Debug)]
@@ -114,7 +114,7 @@ impl Browse {
 
     fn back_button(ui: &&Gui) {
         let button_size = 48.0;
-        let button_center = get_text_center("", Some(&ui.fonts.icons), button_size as u16, 1.0, 0.0);
+        let button_center = get_text_center("", Some(&ui.fonts.icons), button_size as u16, 1.0, 0.0);
 
         if is_mouse_button_pressed(MouseButton::Left) {
             let rectangle = Rect::new(
@@ -135,13 +135,13 @@ impl Browse {
                     WHITE
                 );
 
-                ui.player_bus.publish_message(crate::playerbus::Message::UserClickBackToPlayer);
+                ui.player_bus.publish_message(Message::UserClickBackToPlayer);
                 return;
             }
         }
 
         draw_text_ex(
-            "",
+            "",
             16.0 + button_center.x,
             48.0 + 8.0,
             TextParams {
@@ -308,6 +308,23 @@ impl Screen for Browse {
             let (mouse_x,mouse_y) = mouse_position();
             let rectangle_rect = Rect::new(mouse_x,mouse_y,1.0, 1.0);
 
+            let current_rect = Rect::new(
+                screen_width() / 2.0 - 168.0 + self.gui_state.carousel_position_y_correction,
+                96.0,
+                320.0,
+                320.0,
+            );
+
+            if rectangle_rect.intersect(current_rect).is_some() {
+                let current_id = self.items.get_current().unwrap().get_id();
+                match current_id.get_media_type() { 
+                    PlayableItemMediaType::Album => {
+                        self.player_bus.publish_message(Message::UserPlayAlbum(self.items.get_current().unwrap().get_id().get_id()));
+                    }
+                };
+                self.player_bus.publish_message(Message::UserClickBackToPlayer);
+            }
+            
             let prev_rect = Rect::new(
                 screen_width() / 2.0 - 160.0 - 320.0 - 96.0 + self.gui_state.carousel_position_y_correction,
                 96.0,

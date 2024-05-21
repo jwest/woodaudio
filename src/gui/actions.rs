@@ -110,10 +110,10 @@ impl Screen for Actions {
             }
         }
 
-        let button_center = get_text_center("", Some(&gui.fonts.icons), button_size as u16, 1.0, 0.0);
+        let button_center = get_text_center("", Some(&gui.fonts.icons), button_size as u16, 1.0, 0.0);
 
         draw_text_ex(
-            "",
+            "",
             16.0 + button_center.x,
             48.0 + 8.0,
             TextParams {

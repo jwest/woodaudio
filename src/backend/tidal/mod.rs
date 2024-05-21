@@ -6,7 +6,7 @@ use rand::seq::SliceRandom;
 use serde_json::Value;
 
 use crate::{config::Config, playerbus::PlayerBus, playlist::Track};
-use crate::playlist::{Cover, PlayableItem};
+use crate::playlist::{Cover, PlayableItem, PlayableItemId};
 use self::session::Session;
 use super::Backend;
 
@@ -80,7 +80,7 @@ impl Backend for TidalBackend {
                     error!("{:?}", item["item"]);
                     let cover_id = item["item"]["cover"].as_str().unwrap().replace('-', "/");
                     let cover_url = format!("https://resources.tidal.com/images/{}/{}x{}.jpg", cover_id, 320, 320);
-                    playable_items.push(PlayableItem::init(item["item"]["artist"]["name"].as_str().unwrap().to_string(), item["item"]["title"].as_str().unwrap().to_string(), Some(Cover { foreground: Some(cover_url), background: None })));
+                    playable_items.push(PlayableItem::init(PlayableItemId::album(item["item"]["id"].as_i64().unwrap().to_string()), item["item"]["artist"]["name"].as_str().unwrap().to_string(), item["item"]["title"].as_str().unwrap().to_string(), Some(Cover { foreground: Some(cover_url), background: None })));
                 }
             }
         }

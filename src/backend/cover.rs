@@ -12,18 +12,6 @@ pub struct CoverProcessor {
 }
 
 impl CoverProcessor {
-    pub fn new_by_url(url: String) -> Self {
-        let file_response = Client::builder()
-            .timeout(Duration::from_secs(500))
-            .build().unwrap()
-            .get(&url).send().unwrap()
-            .bytes().unwrap();
-
-        error!("cover url: {:?}", url);
-
-        Self::new(file_response)
-    }
-
     pub fn new(bytes: Bytes) -> Self {
         let image = ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()

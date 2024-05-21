@@ -77,7 +77,7 @@ impl TrackRadioButton {
 
 impl Button for TrackRadioButton {
     fn label(&self, _: State) -> String { 
-        "".to_string()
+        "".to_string()
     }
     
     fn action(&self, state: State) {
@@ -149,7 +149,7 @@ impl LikedAlbumsButton {
 
 impl Button for LikedAlbumsButton {
     fn label(&self, _: State) -> String {
-        "".to_string()
+        "".to_string()
     }
 
     fn action(&self, _: State) {

@@ -111,7 +111,7 @@ impl Covers {
 
     fn add_and_build(&self, cover: BufferedCover) -> Self {
         let mut new_covers = HashMap::from(self.items.to_owned());
-        new_covers.insert(cover.url, cover.path);
+        new_covers.insert(cover.id(), cover.path);
         Covers { items: new_covers }
     }
 }

@@ -4,7 +4,6 @@ use bytes::Bytes;
 
 use crate::{config::Config, playerbus::{self, PlayerBus}, playlist::{BufferedTrack, Playlist, Track}};
 use crate::backend::cover::CoverProcessor;
-use crate::playerbus::Message;
 use crate::playlist::{BufferedCover, PlayableItem};
 
 use self::{downloader::Downloader, tidal::TidalBackend};

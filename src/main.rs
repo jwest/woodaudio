@@ -39,7 +39,7 @@ fn service_module(backend_init: BackendInitialization, playlist: Playlist) {
 
 fn discovery_module(backend_init: BackendInitialization) {
     thread::spawn(move || {
-        // backend_init.get_initialized().discover();
+        backend_init.get_initialized().discover();
     });
 }
 
