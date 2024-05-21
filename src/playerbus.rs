@@ -1,10 +1,11 @@
 use std::{sync::{Arc, Mutex}, time::Duration};
+use std::collections::HashMap;
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use log::{debug, info};
 
-use crate::playlist::{BufferedTrack, Cover, Track};
+use crate::playlist::{BufferedCover, BufferedTrack, Cover, PlayableItem, Track};
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -20,6 +21,8 @@ pub enum Command {
     ShowScreen(String),
     AddTracksToPlaylist(Vec<Track>),
     AddTracksToPlaylistForce(Vec<Track>),
+    LoadLikedAlbum,
+    LoadCover(String)
 }
 
 impl Command {
@@ -36,6 +39,8 @@ impl Command {
             Command::ShowScreen(_) => "ShowScreen".to_owned(),
             Command::AddTracksToPlaylist(_) => "AddTracksToPlaylist".to_owned(),
             Command::AddTracksToPlaylistForce(_) => "AddTracksToPlaylistForce".to_owned(),
+            Command::LoadLikedAlbum => "LoadLikedAlbum".to_owned(),
+            Command::LoadCover(_) => "LoadCover".to_owned(),
         }
     }
 }
@@ -74,6 +79,9 @@ pub enum Message {
     TrackLoaded,
     AlbumTracksLoaded,
     ArtistTracksLoaded,
+    BrowsingPlayableItemsReady(Vec<PlayableItem>),
+    CoverLoaded(BufferedCover),
+    CoverNeeded(String),
 }
 
 #[derive(Debug)]
@@ -82,6 +90,30 @@ pub struct State {
     pub player: PlayerState,
     pub track: Option<TrackState>,
     pub backends: BackendsState,
+    pub browser: Option<BrowserState>,
+    pub covers: Covers,
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct Covers {
+    items: HashMap<String, String>
+}
+
+impl Covers {
+    fn init() -> Self {
+        Self { items: HashMap::new() }
+    }
+
+    pub fn get(&self, cover_url: String) -> Option<&String> {
+        self.items.get(&cover_url)
+    }
+
+    fn add_and_build(&self, cover: BufferedCover) -> Self {
+        let mut new_covers = HashMap::from(self.items.to_owned());
+        new_covers.insert(cover.url, cover.path);
+        Covers { items: new_covers }
+    }
 }
 
 #[derive(Debug)]
@@ -97,6 +129,12 @@ pub enum BackendState {
 #[derive(Clone)]
 pub struct BackendsState {
     pub tidal: BackendState,
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct BrowserState {
+    pub items: Vec<PlayableItem>,
 }
 
 #[derive(Debug)]
@@ -243,6 +281,8 @@ impl State {
             backends: BackendsState { 
                 tidal: BackendState::Off
             },
+            browser: None,
+            covers: Covers::init(),
         }
     }
 }
@@ -278,7 +318,7 @@ impl PlayerBus {
             Message::TracksDiscoveredWithHighPriority(tracks) => { self.publish_command(Command::AddTracksToPlaylistForce(tracks)); prev_state },
             Message::UserClickActions => { self.publish_command(Command::ShowScreen("/actions".to_string())); prev_state },
             Message::UserClickBackToPlayer => { self.publish_command(Command::ShowScreen("/player".to_string())); prev_state },
-            Message::UserClickLikedAlbumsButton => { self.publish_command(Command::ShowScreen("/browse".to_string())); prev_state },
+            Message::UserClickLikedAlbumsButton => { self.publish_command(Command::ShowScreen("/browse".to_string())); self.publish_command(Command::LoadLikedAlbum); prev_state },
             Message::TidalBackendStarted => State { backends: BackendsState { tidal: BackendState::Initialization, ..prev_state.backends }, ..prev_state },
             Message::TidalBackendLoginLinkCreated(login_link) =>  State { backends: BackendsState { tidal: BackendState::WaitingForLoginByLink(login_link), ..prev_state.backends }, ..prev_state },
             Message::TidalBackendInitialized => { self.publish_command(Command::ShowScreen("/player".to_string())); State { backends: BackendsState { tidal: BackendState::Ready, ..prev_state.backends }, ..prev_state }},
@@ -286,6 +326,9 @@ impl PlayerBus {
             Message::TrackLoaded => { self.publish_command(Command::Next); prev_state },
             Message::AlbumTracksLoaded => { self.publish_command(Command::Next); prev_state },
             Message::ArtistTracksLoaded => { self.publish_command(Command::Next); prev_state },
+            Message::BrowsingPlayableItemsReady(items) => State { browser: Some(BrowserState { items }), ..prev_state },
+            Message::CoverNeeded(cover_url) => { self.publish_command(Command::LoadCover(cover_url)); prev_state },
+            Message::CoverLoaded(cover) => State { covers: prev_state.covers.add_and_build(cover), ..prev_state },
         };
 
         *state = next_state;

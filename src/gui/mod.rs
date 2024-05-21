@@ -92,9 +92,9 @@ impl Gui {
             state,
             screen_registry: ScreenRegistry::init(vec![
                 Box::new(SessionGui::init()),
-                Box::new(Player::init(player_bus)),
+                Box::new(Player::init(player_bus.clone())),
                 Box::new(Actions::init(home::home_dir().unwrap().join(".config/woodaudio/actions.json").to_str().unwrap().to_string())),
-                Box::new(Browse::init()),
+                Box::new(Browse::init(player_bus)),
             ]),
             fonts,
         }

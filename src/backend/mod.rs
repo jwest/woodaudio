@@ -3,12 +3,15 @@ use std::{error::Error, sync::{Arc, Mutex}, time::Duration};
 use bytes::Bytes;
 
 use crate::{config::Config, playerbus::{self, PlayerBus}, playlist::{BufferedTrack, Playlist, Track}};
+use crate::backend::cover::CoverProcessor;
+use crate::playerbus::Message;
+use crate::playlist::{BufferedCover, PlayableItem};
 
 use self::{downloader::Downloader, tidal::TidalBackend};
 
 mod tidal;
 mod downloader;
-mod cover;
+pub mod cover;
 mod storage;
 
 pub trait Backend {
@@ -21,6 +24,7 @@ pub trait Backend {
     fn discovery_album(&self, id: &str, discovery_fn: impl Fn(Vec<Track>));
     fn discovery_artist(&self, id: &str, discovery_fn: impl Fn(Vec<Track>));
     fn add_track_to_favorites(&self, track_id: &str);
+    fn get_favorite_albums(&self) -> Vec<PlayableItem>;
 }
 
 #[derive(Clone)]
@@ -90,6 +94,8 @@ impl BackendService {
                 "PlayAlbumForce".to_string(), 
                 "PlayArtistForce".to_string(), 
                 "Like".to_string(),
+                "LoadLikedAlbum".to_string(),
+                "LoadCover".to_string(),
             ]
         );
 
@@ -126,6 +132,14 @@ impl BackendService {
                 Some(playerbus::Command::Like(track_id)) => {
                     let _ = self.tidal.add_track_to_favorites(&track_id);
                     self.playerbus.lock().unwrap().publish_message(playerbus::Message::TrackAddedToFavorites);
+                },
+                Some(playerbus::Command::LoadLikedAlbum) => {
+                    let playable_items = self.tidal.get_favorite_albums();
+                    self.playerbus.lock().unwrap().publish_message(playerbus::Message::BrowsingPlayableItemsReady(playable_items));
+                },
+                Some(playerbus::Command::LoadCover(cover_url)) => {
+                    let cover_path = CoverProcessor::new(self.tidal.get_cover(cover_url.clone()).unwrap()).generate_foreground().unwrap();
+                    self.playerbus.lock().unwrap().publish_message(playerbus::Message::CoverLoaded(BufferedCover { url: cover_url.clone(), path: cover_path.to_str().unwrap().to_string() }))
                 },
                 _ => {
                     std::thread::sleep(Duration::from_millis(500));

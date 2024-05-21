@@ -27,6 +27,26 @@ impl Track {
     }
 }
 
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct PlayableItem {
+    artist: String,
+    title: String,
+    cover: Option<Cover>,
+}
+
+impl PlayableItem {
+    pub fn init(artist: String, title: String, cover: Option<Cover>) -> Self {
+        Self {
+            artist, title, cover,
+        }
+    }
+
+    pub fn get_artist(&self) -> String { self.artist.clone() }
+    pub fn get_title(&self) -> String { self.title.clone() }
+    pub fn get_cover(&self) -> Option<Cover> { self.cover.clone() }
+}
+
 impl fmt::Debug for Track {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Track: {}, {}", self.id, self.full_name())
@@ -36,8 +56,21 @@ impl fmt::Debug for Track {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct Cover {
-    pub foreground: Option<String>, 
+    pub foreground: Option<String>,
     pub background: Option<String>,
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct BufferedCover {
+    pub url: String,
+    pub path: String,
+}
+
+impl BufferedCover {
+    pub fn id(&self) -> String {
+        self.url.clone()
+    }
 }
 
 impl Cover {
