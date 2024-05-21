@@ -1,10 +1,7 @@
 use std::{error::Error, io::Cursor, path::PathBuf};
-use std::time::Duration;
 
 use bytes::Bytes;
 use image::{io::Reader as ImageReader, DynamicImage};
-use log::error;
-use reqwest::blocking::Client;
 use tempfile::NamedTempFile;
 
 pub struct CoverProcessor {
