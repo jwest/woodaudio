@@ -1,13 +1,13 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use macroquad::prelude::*;
-use crate::gui::browse::Browse;
 
 use crate::playerbus::{BroadcastChannel, Command, PlayerBus, State};
 
 use self::actions::Actions;
 use self::player::Player;
 use self::session::SessionGui;
+use self::browse::Browse;
 
 pub mod session;
 pub mod actions;
@@ -81,9 +81,9 @@ impl Gui {
         let channel = player_bus.register_command_channel(vec!["ShowScreen".to_string()]);
 
         let fonts = Fonts {
-            title: load_ttf_font_from_bytes(include_bytes!("../../static/NotoSans_Condensed-SemiBold.ttf")).unwrap(),
-            subtitle: load_ttf_font_from_bytes(include_bytes!("../../static/NotoSans_Condensed-Light.ttf")).unwrap(),
-            icons: load_ttf_font_from_bytes(include_bytes!("../../static/fontello.ttf")).unwrap(),
+            title: load_ttf_font_from_bytes(include_bytes!("../../../static/NotoSans_Condensed-SemiBold.ttf")).unwrap(),
+            subtitle: load_ttf_font_from_bytes(include_bytes!("../../../static/NotoSans_Condensed-Light.ttf")).unwrap(),
+            icons: load_ttf_font_from_bytes(include_bytes!("../../../static/fontello.ttf")).unwrap(),
         };
 
         Gui { 

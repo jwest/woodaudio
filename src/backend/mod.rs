@@ -4,13 +4,14 @@ use bytes::Bytes;
 
 use crate::{config::Config, playerbus::{self, PlayerBus}, playlist::{BufferedTrack, Playlist, Track}};
 use crate::backend::cover::CoverProcessor;
+use crate::backend::storage::{CacheRandomRead, FileStorage};
 use crate::playlist::{BufferedCover, PlayableItem};
 
 use self::{downloader::Downloader, tidal::TidalBackend};
 
 mod tidal;
 mod downloader;
-pub mod cover;
+mod cover;
 mod storage;
 
 pub trait Backend {
@@ -65,6 +66,8 @@ pub struct BackendService {
     tidal: TidalBackend,
     downloader: Downloader,
     playerbus: Arc<Mutex<PlayerBus>>,
+    discovery_local: bool,
+    storage_local: Arc<Mutex<FileStorage>>,
 }
 
 impl BackendService {
@@ -73,9 +76,18 @@ impl BackendService {
             tidal: tidal.clone(),
             playerbus: Arc::new(Mutex::new(playerbus)),
             downloader: Downloader::init(config, tidal),
+            discovery_local: config.player.without_cold_start,
+            storage_local: Arc::new(Mutex::new(FileStorage::init(config.exporter_file.clone()))),
         }
     }
     pub fn discover(&self) {
+        if self.discovery_local {
+            for _ in 0..5 {
+                let audio_file = self.storage_local.try_lock().unwrap().read_random_file(None).unwrap().unwrap();
+                self.playerbus.lock().unwrap().publish_message(playerbus::Message::TrackDiscoveredLocally(audio_file));
+            }
+        }
+
         self.tidal.discovery(move |track| {
             self.playerbus.lock().unwrap().publish_message(playerbus::Message::TrackDiscovered(track));
         });
@@ -87,7 +99,8 @@ impl BackendService {
         let channel = self.playerbus.lock().unwrap().register_command_channel(
             vec![
                 "AddTracksToPlaylist".to_string(), 
-                "AddTracksToPlaylistForce".to_string(), 
+                "AddTracksToPlaylistForce".to_string(),
+                "AddBufferedTracksToPlaylist".to_string(),
                 "Radio".to_string(), 
                 "PlayTrackForce".to_string(), 
                 "PlayAlbumForce".to_string(), 
@@ -111,6 +124,9 @@ impl BackendService {
                 },
                 Some(playerbus::Command::AddTracksToPlaylistForce(tracks)) => {
                     playlist.push_force(tracks);
+                },
+                Some(playerbus::Command::AddBufferedTracksToPlaylist(tracks)) => {
+                    playlist.push_buffered(tracks);
                 },
                 Some(playerbus::Command::Radio(track_id)) => {
                     let _ = self.tidal.discovery_radio(&track_id, discovery_fn);

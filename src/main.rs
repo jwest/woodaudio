@@ -1,14 +1,15 @@
 use backend::BackendInitialization;
 use env_logger::Target;
-use gui::Gui;
+use interface::gui::Gui;
 
 #[cfg(target_os = "macos")]
-use gui::systray;
+use interface::systray;
 
 use log::error;
 use macroquad::window::Conf;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::thread::{self, JoinHandle};
+use macroquad::miniquad::conf::{LinuxBackend, Platform};
 
 mod playerbus;
 use playerbus::PlayerBus;
@@ -22,8 +23,9 @@ mod config;
 use config::Config;
 
 mod player;
-mod http;
-mod gui;
+mod interface;
+
+use interface::http;
 
 fn session_module(backend_init: BackendInitialization) {
     thread::spawn(move || {
@@ -78,14 +80,19 @@ async fn gui_module(player_bus: PlayerBus) {
         .await;
 }
 
-fn conf(config: Config) -> Conf {
+fn conf(_config: Config) -> Conf {
     Conf {
-      window_title: "Woodaudio".to_string(),
-      fullscreen: config.gui.fullscreen,
-      window_height: 600,
-      window_width: 1024,
-      window_resizable: false,
-      ..Default::default()
+        window_title: "Woodaudio".to_string(),
+        // fullscreen: config.gui.fullscreen,
+        // window_height: 600,
+        // window_width: 1024,
+        // window_resizable: false,
+        platform: Platform {
+            linux_backend: LinuxBackend::X11WithWaylandFallback,
+            wayland_use_fallback_decorations: true,
+            ..Default::default()
+        },
+        ..Default::default()
     }
 }
 

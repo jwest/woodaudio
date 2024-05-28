@@ -16,6 +16,16 @@ pub struct Track {
 }
 
 impl Track {
+    pub fn dummy() -> Self {
+        Self {
+            id: "".to_owned(),
+            album_name: "".to_owned(),
+            artist_name: "".to_owned(),
+            duration: Duration::from_secs(1),
+            album_image: "".to_owned(),
+            title: "".to_owned(),
+        }
+    }
     pub fn duration_formated(&self) -> String {
         let seconds = self.duration.as_secs() % 60;
         let minutes = (self.duration.as_secs() / 60) % 60;
@@ -181,6 +191,11 @@ impl Playlist {
         });
     }
 
+    pub fn push_buffered(&self, tracks: Vec<BufferedTrack>) {
+        debug!("[Playlist] Push tracks: {:?}", tracks);
+        for track in &tracks { let _ = self.buffered_sender.send(track.clone()); }
+    }
+    
     pub fn pop(&self) -> Option<BufferedTrack> {
         self.sender.lock().map(|_| {
             match self.buffered_receiver.try_recv() {

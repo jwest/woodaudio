@@ -38,6 +38,7 @@ pub struct Tidal {
     pub token_type: String,
     pub access_token: String,
     pub refresh_token: String,
+    pub audio_quality: String,
 }
 
 impl Tidal {
@@ -47,13 +48,34 @@ impl Tidal {
             token_type: properties.get_string_with_default("token_type", "Bearer"),
             access_token: properties.get_string("access_token"),
             refresh_token: properties.get_string("refresh_token"),
+            audio_quality: properties.get_string_with_default("audio_quality", "HI_RES_LOSSLESS"),
         }
     }
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("Tidal"))
             .set("token_type", self.token_type.clone())
             .set("access_token", self.access_token.clone())
-            .set("refresh_token", self.refresh_token.clone());
+            .set("refresh_token", self.refresh_token.clone())
+            .set("audio_quality", self.audio_quality.clone());
+    }
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct Player {
+    pub without_cold_start: bool,
+}
+
+impl Player {
+    fn init(conf: &Ini) -> Self {
+        let properties = conf.section(Some("Player"));
+        Self {
+            without_cold_start: properties.get_bool_with_default("without_cold_start", false),
+        }
+    }
+    fn prepare_to_save(&self, ini: &mut Ini) {
+        ini.with_section(Some("Player"))
+            .set("without_cold_start", bool_to_string(self.without_cold_start));
     }
 }
 
@@ -117,7 +139,7 @@ impl crate::config::ExporterFile {
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("ExporterFile"))
             .set("enabled", bool_to_string(self.enabled))
-            .set("server", self.path.clone());
+            .set("path", self.path.clone());
     }
 }
 
@@ -149,6 +171,7 @@ impl ExporterFTP {
 pub struct Config {
     path: PathBuf,
     pub tidal: Tidal,
+    pub player: Player,
     pub gui: Gui,
     pub exporter_file: ExporterFile,
     pub exporter_ftp: ExporterFTP,
@@ -165,6 +188,7 @@ impl Config {
         Self { 
             path,
             tidal: Tidal::init(&conf),
+            player: Player::init(&conf),
             gui: Gui::init(&conf),
             exporter_file: ExporterFile::init(&conf),
             exporter_ftp: ExporterFTP::init(&conf),
@@ -173,6 +197,7 @@ impl Config {
     pub fn save(&self) {
         let mut conf = Ini::new();
         self.tidal.prepare_to_save(&mut conf);
+        self.player.prepare_to_save(&mut conf);
         self.gui.prepare_to_save(&mut conf);
         self.exporter_file.prepare_to_save(&mut conf);
         self.exporter_ftp.prepare_to_save(&mut conf);

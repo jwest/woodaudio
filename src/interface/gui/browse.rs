@@ -5,7 +5,7 @@ use macroquad::color::{Color, WHITE};
 use macroquad::input::{is_mouse_button_pressed, mouse_position, MouseButton};
 use macroquad::math::Rect;
 use macroquad::prelude::{draw_rectangle, draw_text_ex, draw_texture_ex, DrawTextureParams, get_text_center, ImageFormat, is_mouse_button_down, load_texture, screen_width, TextParams, Texture2D};
-use crate::gui::{Gui, Screen};
+use crate::interface::gui::{Gui, Screen};
 use crate::playerbus::{Message, PlayerBus, State};
 use crate::playerbus::Message::CoverNeeded;
 use crate::playlist::{PlayableItem, PlayableItemMediaType};
@@ -97,7 +97,7 @@ pub struct Browse {
 impl Browse {
     pub fn init(player_bus: PlayerBus) -> Self {
         let mut covers: HashMap<String, Option<Texture2D>> = HashMap::new();
-        covers.insert("default".to_string(), Some(Texture2D::from_file_with_format(include_bytes!("../../static/sample_cover.jpg-foreground.png"), Some(ImageFormat::Png))));
+        covers.insert("default".to_string(), Some(Texture2D::from_file_with_format(include_bytes!("../../../static/sample_cover.jpg-foreground.png"), Some(ImageFormat::Png))));
         Self {
             player_bus,
             items: List::init(vec![]),

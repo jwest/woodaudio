@@ -42,7 +42,7 @@ impl Downloader {
             backend,
         }
     }
-    
+
     pub fn download_file(&self, track: Track) -> Result<BufferedTrack, Box<dyn Error>> {
         if let Some(storage_file) = self.storage_file.lock().unwrap().as_mut() {
             match storage_file.read_file(&track.file_name(), None) {
@@ -79,7 +79,7 @@ impl Downloader {
 
             if let Some(storage_file) = self.storage_file.lock().unwrap().as_mut() {
                 let export_bytes = bytes_response.clone();
-                match storage_file.write_file(export_bytes, &track.file_name(), None) {
+                match storage_file.write_file(track.clone(), export_bytes, &track.file_name(), None) {
                     Ok(()) => {
                         info!("[Storage File] cache file wrote, track: {:?}", track);
                     },
@@ -91,7 +91,7 @@ impl Downloader {
 
             if let Some(storage_ftp) = self.storage_ftp.lock().unwrap().as_mut() {
                 let export_bytes = bytes_response.clone();
-                match storage_ftp.write_file(export_bytes, &track.file_name(), None) {
+                match storage_ftp.write_file(track.clone(), export_bytes, &track.file_name(), None) {
                     Ok(()) => {
                         info!("[Storage FTP] cache file wrote, track: {:?}", track);
                     },

@@ -1,19 +1,28 @@
 use std::{error::Error, fs, io::Read};
 use std::path::PathBuf;
+use rand::seq::IteratorRandom;
 
 use bytes::{Buf, Bytes};
 use log::info;
+use metaflac::block::VorbisComment;
+use metaflac::Tag;
 use suppaftp::{types::FileType, FtpStream};
 
 use crate::config::{ExporterFile, ExporterFTP};
+use crate::playlist::{BufferedTrack, Cover, Track};
 
+extern crate rand;
 
 pub trait CacheRead {
-    fn read_file(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<bytes::Bytes>, Box<dyn Error>>;
+    fn read_file(&mut self, output_file_name: &str, output_dir: Option<&str>) -> Result<Option<Bytes>, Box<dyn Error>>;
+}
+
+pub trait CacheRandomRead {
+    fn read_random_file(&mut self, output_dir: Option<&str>) -> Result<Option<BufferedTrack>, Box<dyn Error>>;
 }
 
 pub trait Exporter {
-    fn write_file(&mut self, source: bytes::Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>>;
+    fn write_file(&mut self, track: Track, source: Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>>;
 }
 
 pub struct FtpStorage {
@@ -45,7 +54,7 @@ impl FtpStorage {
 }
 
 impl Exporter for FtpStorage {
-    fn write_file(&mut self, source: bytes::Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
+    fn write_file(&mut self, _: Track, source: Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
         let file_name = self.file_name_with_create_dir(output_file_name, output_dir)?;
 
         self.client.put_file(
@@ -94,6 +103,10 @@ impl FileStorage {
         fs::create_dir_all(&self.path)?;
         Ok(format!("{}/{output_file_name}", &self.path.to_str().unwrap()))
     }
+
+    fn get_or_default(tag_content: Option<&Vec<String>>) -> String {
+        tag_content.unwrap_or(&vec![]).get(0).unwrap_or(&"".to_string()).to_string()
+    }
 }
 
 impl CacheRead for FileStorage {
@@ -106,10 +119,48 @@ impl CacheRead for FileStorage {
     }
 }
 
+impl CacheRandomRead for FileStorage {
+    fn read_random_file(&mut self, _output_dir: Option<&str>) -> Result<Option<BufferedTrack>, Box<dyn Error>> {
+        let mut rng = rand::thread_rng();
+        let files = fs::read_dir(&self.path)?;
+        let file = files.choose(&mut rng).unwrap()?;
+
+        match fs::read(file.path()) {
+            Ok(content) => {
+                let tag = Tag::read_from_path(file.path()).unwrap_or_default();
+                let vorbis_comment = VorbisComment::new();
+                let vorbis = tag.vorbis_comments().unwrap_or(&vorbis_comment);
+                let buffered_track = BufferedTrack {
+                    track: Track {
+                        id: "".to_string(),
+                        title: Self::get_or_default(vorbis.title()),
+                        artist_name: Self::get_or_default(vorbis.artist()),
+                        album_name: Self::get_or_default(vorbis.album()),
+                        album_image: "".to_string(),
+                        duration: Default::default(),
+                    },
+                    stream: bytes::Bytes::from(content),
+                    cover: Cover::empty(),
+                };
+                Ok(Some(buffered_track))
+            },
+            Err(_) => Ok(None)
+        }
+    }
+}
+
 impl Exporter for FileStorage {
-    fn write_file(&mut self, source: Bytes, output_file_name: &str, _output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
+    fn write_file(&mut self, track: Track, source: Bytes, output_file_name: &str, _output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
         let file_name = self.file_name_with_create_dir(output_file_name)?;
-        fs::write(file_name, source)?;
+        fs::write(file_name.clone(), source)?;
+
+        let mut tag = Tag::read_from_path(file_name)?;
+        let vorbis = tag.vorbis_comments_mut();
+        vorbis.set_title(vec![track.title]);
+        vorbis.set_album(vec![track.album_name]);
+        vorbis.set_artist(vec![track.artist_name]);
+
+        tag.save()?;
         Ok(())
     }
 }

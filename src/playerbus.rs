@@ -21,6 +21,7 @@ pub enum Command {
     ShowScreen(String),
     AddTracksToPlaylist(Vec<Track>),
     AddTracksToPlaylistForce(Vec<Track>),
+    AddBufferedTracksToPlaylist(Vec<BufferedTrack>),
     LoadLikedAlbum,
     LoadCover(String)
 }
@@ -39,6 +40,7 @@ impl Command {
             Command::ShowScreen(_) => "ShowScreen".to_owned(),
             Command::AddTracksToPlaylist(_) => "AddTracksToPlaylist".to_owned(),
             Command::AddTracksToPlaylistForce(_) => "AddTracksToPlaylistForce".to_owned(),
+            Command::AddBufferedTracksToPlaylist(_) => "AddBufferedTracksToPlaylist".to_owned(),
             Command::LoadLikedAlbum => "LoadLikedAlbum".to_owned(),
             Command::LoadCover(_) => "LoadCover".to_owned(),
         }
@@ -57,6 +59,7 @@ pub enum Message {
     TrackAddedToFavorites,
     TrackDiscovered(Track),
     TracksDiscoveredWithHighPriority(Vec<Track>),
+    TrackDiscoveredLocally(BufferedTrack),
 
     UserPlay,
     UserPause,
@@ -316,6 +319,7 @@ impl PlayerBus {
             Message::TrackAddedToFavorites => { prev_state },
             Message::TrackDiscovered(track) => { self.publish_command(Command::AddTracksToPlaylist(vec![track])); prev_state },
             Message::TracksDiscoveredWithHighPriority(tracks) => { self.publish_command(Command::AddTracksToPlaylistForce(tracks)); prev_state },
+            Message::TrackDiscoveredLocally(buffered_stream) => { self.publish_command(Command::AddBufferedTracksToPlaylist(vec![buffered_stream])); prev_state },
             Message::UserClickActions => { self.publish_command(Command::ShowScreen("/actions".to_string())); prev_state },
             Message::UserClickBackToPlayer => { self.publish_command(Command::ShowScreen("/player".to_string())); prev_state },
             Message::UserClickLikedAlbumsButton => { self.publish_command(Command::ShowScreen("/browse".to_string())); self.publish_command(Command::LoadLikedAlbum); prev_state },

@@ -206,9 +206,9 @@ impl Player {
         ]);
 
         let cover_foreground_path = "../static/sample_cover.jpg-foreground.png".to_string();
-        let cover_foreground: Texture2D = Texture2D::from_file_with_format(include_bytes!("../../static/sample_cover.jpg-foreground.png"), Some(ImageFormat::Png));
+        let cover_foreground: Texture2D = Texture2D::from_file_with_format(include_bytes!("../../../static/sample_cover.jpg-foreground.png"), Some(ImageFormat::Png));
         let cover_background_path = "../static/sample_cover.jpg-background.png".to_string();
-        let cover_background: Texture2D = Texture2D::from_file_with_format(include_bytes!("../../static/sample_cover.jpg-background.png"), Some(ImageFormat::Png));
+        let cover_background: Texture2D = Texture2D::from_file_with_format(include_bytes!("../../../static/sample_cover.jpg-background.png"), Some(ImageFormat::Png));
 
         Self {
             buttons,

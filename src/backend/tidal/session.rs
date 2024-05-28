@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::error::Error;
 use std::time::Duration;
 use std::{time, thread};
-use log::info;
+use log::{debug, info};
 
 use crate::config::{Config, Tidal};
 use crate::playerbus::{Message, PlayerBus};
@@ -20,6 +20,7 @@ pub(super) struct Session {
     user_id: i64,
     token: String,
     api_path: String,
+    audio_quality: String,
 }
 
 #[derive(Debug)]
@@ -173,6 +174,7 @@ impl Session {
                 user_id: session.user_id, 
                 token: config.tidal.token().clone(),
                 api_path: "https://api.tidal.com/v1".to_string(),
+                audio_quality: config.tidal.audio_quality.clone(),
             });
         }
 
@@ -268,7 +270,9 @@ impl Session {
         Ok(())
     }
     pub(super) fn get_track_url(&self, track_id: String) -> Result<String, Box<dyn Error>> {
-        let response = self.request(format!("{}/tracks/{}/urlpostpaywall?sessionId={}&urlusagemode=STREAM&audioquality=LOSSLESS&assetpresentation=FULL", self.api_path, track_id, self.session_id))?;
+        let download_url = format!("{}/tracks/{}/urlpostpaywall?sessionId={}&urlusagemode=STREAM&audioquality={}&assetpresentation=FULL", self.api_path, track_id, self.session_id, self.audio_quality);
+        debug!("Download track: {}, with url: {}", track_id, download_url);
+        let response = self.request(download_url)?;
         if response.status().is_success() {
             let url = response.json::<ResponseMedia>()?.urls[0].clone();
             Ok(url)

@@ -1,4 +1,4 @@
-use rodio::{OutputStream, Decoder, Sink};
+use rodio::{OutputStream, Decoder, Sink, Source};
 use std::{io::{BufReader, Cursor}, thread, time::{Duration, Instant}};
 use log::{debug, error};
 
@@ -19,7 +19,10 @@ fn source(track: BufferedTrack) -> Option<Decoder<BufReader<std::io::Cursor<byte
     let source_result = Decoder::new_flac(BufReader::with_capacity(4_194_304, Cursor::new(track.stream)));
 
     match source_result {
-        Ok(file) => Some(file),
+        Ok(file) => {
+            debug!("Track {:?}, channels: {:?}, sample rate: {:?}, duration: {:?}", track.track, file.channels(), file.sample_rate(), file.total_duration());
+            Some(file)
+        },
         Err(err) => {
             error!("[Player] Audio file '{:?}' decode error, try next...", err);
             None
