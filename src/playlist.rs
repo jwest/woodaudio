@@ -16,16 +16,6 @@ pub struct Track {
 }
 
 impl Track {
-    pub fn dummy() -> Self {
-        Self {
-            id: "".to_owned(),
-            album_name: "".to_owned(),
-            artist_name: "".to_owned(),
-            duration: Duration::from_secs(1),
-            album_image: "".to_owned(),
-            title: "".to_owned(),
-        }
-    }
     pub fn duration_formated(&self) -> String {
         let seconds = self.duration.as_secs() % 60;
         let minutes = (self.duration.as_secs() / 60) % 60;

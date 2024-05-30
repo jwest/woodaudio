@@ -6,8 +6,8 @@ use macroquad::input::{is_mouse_button_pressed, mouse_position, MouseButton};
 use macroquad::math::Rect;
 use macroquad::prelude::{draw_rectangle, draw_text_ex, draw_texture_ex, DrawTextureParams, get_text_center, ImageFormat, is_mouse_button_down, load_texture, screen_width, TextParams, Texture2D};
 use crate::interface::gui::{Gui, Screen};
-use crate::playerbus::{Message, PlayerBus, State};
-use crate::playerbus::Message::CoverNeeded;
+use crate::state::{Message, PlayerBus, State};
+use crate::state::Message::CoverNeeded;
 use crate::playlist::{PlayableItem, PlayableItemMediaType};
 
 #[derive(Clone)]

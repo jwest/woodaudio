@@ -1,4 +1,4 @@
-use std::{error::Error, sync::{Arc, Mutex}};
+use std::{error::Error, fs, sync::{Arc, Mutex}};
 
 use log::{debug, error, info};
 use secular::normalized_lower_lay_string;
@@ -77,9 +77,12 @@ impl Downloader {
         for _ in 1..5 {
             let bytes_response = self.backend.get_track(track.id.clone())?;
 
+            let cover = self.download_album_cover(track.album_image.clone()).unwrap_or_else(|_| Cover::empty());
+
             if let Some(storage_file) = self.storage_file.lock().unwrap().as_mut() {
                 let export_bytes = bytes_response.clone();
-                match storage_file.write_file(track.clone(), export_bytes, &track.file_name(), None) {
+                let cover_image = if let Some(image_url) = cover.clone().foreground { Some(fs::read(image_url)?) } else { None };
+                match storage_file.write_file(track.clone(), export_bytes, &track.file_name(), None, cover_image) {
                     Ok(()) => {
                         info!("[Storage File] cache file wrote, track: {:?}", track);
                     },
@@ -91,7 +94,7 @@ impl Downloader {
 
             if let Some(storage_ftp) = self.storage_ftp.lock().unwrap().as_mut() {
                 let export_bytes = bytes_response.clone();
-                match storage_ftp.write_file(track.clone(), export_bytes, &track.file_name(), None) {
+                match storage_ftp.write_file(track.clone(), export_bytes, &track.file_name(), None, None) {
                     Ok(()) => {
                         info!("[Storage FTP] cache file wrote, track: {:?}", track);
                     },
@@ -104,7 +107,7 @@ impl Downloader {
             return Ok(BufferedTrack {
                 track: track.clone(),
                 stream: bytes_response,
-                cover: self.download_album_cover(track.album_image).unwrap_or_else(|_| Cover::empty()),
+                cover,
             })
         }
     

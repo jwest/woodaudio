@@ -11,8 +11,8 @@ use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::thread::{self, JoinHandle};
 use macroquad::miniquad::conf::{LinuxBackend, Platform};
 
-mod playerbus;
-use playerbus::PlayerBus;
+mod state;
+use state::PlayerBus;
 
 mod playlist;
 use playlist::Playlist;
@@ -27,27 +27,17 @@ mod interface;
 
 use interface::http;
 
-fn session_module(backend_init: BackendInitialization) {
-    thread::spawn(move || {
-        backend_init.initialization();
-    });
-}
-
 fn service_module(backend_init: BackendInitialization, playlist: Playlist) {
     thread::spawn(move || {
+        backend_init.initialization();
         backend_init.get_initialized().listen_commands(playlist);
-    });
-}
-
-fn discovery_module(backend_init: BackendInitialization) {
-    thread::spawn(move || {
-        backend_init.get_initialized().discover();
     });
 }
 
 fn downloader_module(playlist: Playlist, backend_init: BackendInitialization) {
     thread::spawn(move || {
         let backend = backend_init.get_initialized();
+        backend.discover();
 
         playlist.buffer_worker(|track| {
             match backend.download(track) {
@@ -80,18 +70,13 @@ async fn gui_module(player_bus: PlayerBus) {
         .await;
 }
 
-fn conf(_config: Config) -> Conf {
+fn conf(config: Config) -> Conf {
     Conf {
         window_title: "Woodaudio".to_string(),
-        // fullscreen: config.gui.fullscreen,
-        // window_height: 600,
-        // window_width: 1024,
-        // window_resizable: false,
-        platform: Platform {
-            linux_backend: LinuxBackend::X11WithWaylandFallback,
-            wayland_use_fallback_decorations: true,
-            ..Default::default()
-        },
+        fullscreen: config.gui.fullscreen,
+        window_height: 600,
+        window_width: 1024,
+        window_resizable: false,    
         ..Default::default()
     }
 }
@@ -108,8 +93,6 @@ fn main() {
 
     let backend_init = BackendInitialization::new(config.clone(), player_bus.clone());
 
-    session_module(backend_init.clone());
-    discovery_module(backend_init.clone());
     service_module(backend_init.clone(), playlist.clone());
     downloader_module(playlist.clone(), backend_init.clone());
     server_module(player_bus.clone());

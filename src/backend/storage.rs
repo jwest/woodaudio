@@ -4,9 +4,10 @@ use rand::seq::IteratorRandom;
 
 use bytes::{Buf, Bytes};
 use log::info;
-use metaflac::block::VorbisComment;
+use metaflac::block::{Picture, PictureType, VorbisComment};
 use metaflac::Tag;
 use suppaftp::{types::FileType, FtpStream};
+use tempfile::NamedTempFile;
 
 use crate::config::{ExporterFile, ExporterFTP};
 use crate::playlist::{BufferedTrack, Cover, Track};
@@ -22,7 +23,7 @@ pub trait CacheRandomRead {
 }
 
 pub trait Exporter {
-    fn write_file(&mut self, track: Track, source: Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>>;
+    fn write_file(&mut self, track: Track, source: Bytes, output_file_name: &str, output_dir: Option<&str>, cover: Option<Vec<u8>>) -> Result<(), Box<dyn Error>>;
 }
 
 pub struct FtpStorage {
@@ -54,7 +55,7 @@ impl FtpStorage {
 }
 
 impl Exporter for FtpStorage {
-    fn write_file(&mut self, _: Track, source: Bytes, output_file_name: &str, output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
+    fn write_file(&mut self, _: Track, source: Bytes, output_file_name: &str, output_dir: Option<&str>, _: Option<Vec<u8>>) -> Result<(), Box<dyn Error>> {
         let file_name = self.file_name_with_create_dir(output_file_name, output_dir)?;
 
         self.client.put_file(
@@ -107,6 +108,12 @@ impl FileStorage {
     fn get_or_default(tag_content: Option<&Vec<String>>) -> String {
         tag_content.unwrap_or(&vec![]).get(0).unwrap_or(&"".to_string()).to_string()
     }
+
+    fn generate_tmp_file() -> Result<PathBuf, Box<dyn Error>> {
+        let path = NamedTempFile::new()?.into_temp_path();
+        let image_tmp_path = path.keep()?.to_str().unwrap().to_string();
+        Ok(PathBuf::from(image_tmp_path))
+    }
 }
 
 impl CacheRead for FileStorage {
@@ -130,6 +137,23 @@ impl CacheRandomRead for FileStorage {
                 let tag = Tag::read_from_path(file.path()).unwrap_or_default();
                 let vorbis_comment = VorbisComment::new();
                 let vorbis = tag.vorbis_comments().unwrap_or(&vorbis_comment);
+
+                let front = tag.pictures().filter(|picture| picture.picture_type == PictureType::CoverFront).next();
+
+                let cover = match front {
+                    Some(picture) => {
+                        let file = Self::generate_tmp_file()?;
+                        fs::write(&file, &picture.data)?;
+                        Cover {
+                            foreground: Some(file.to_str().unwrap().to_string()),
+                            background: None,
+                        }
+                    },
+                    None => {
+                        Cover::empty()
+                    },
+                };
+
                 let buffered_track = BufferedTrack {
                     track: Track {
                         id: "".to_string(),
@@ -140,7 +164,7 @@ impl CacheRandomRead for FileStorage {
                         duration: Default::default(),
                     },
                     stream: bytes::Bytes::from(content),
-                    cover: Cover::empty(),
+                    cover,
                 };
                 Ok(Some(buffered_track))
             },
@@ -150,7 +174,7 @@ impl CacheRandomRead for FileStorage {
 }
 
 impl Exporter for FileStorage {
-    fn write_file(&mut self, track: Track, source: Bytes, output_file_name: &str, _output_dir: Option<&str>) -> Result<(), Box<dyn Error>> {
+    fn write_file(&mut self, track: Track, source: Bytes, output_file_name: &str, _output_dir: Option<&str>, cover: Option<Vec<u8>>) -> Result<(), Box<dyn Error>> {
         let file_name = self.file_name_with_create_dir(output_file_name)?;
         fs::write(file_name.clone(), source)?;
 
@@ -159,6 +183,10 @@ impl Exporter for FileStorage {
         vorbis.set_title(vec![track.title]);
         vorbis.set_album(vec![track.album_name]);
         vorbis.set_artist(vec![track.artist_name]);
+
+        if let Some(cover) = cover {
+            tag.add_picture("image/png", PictureType::CoverFront, cover);
+        }
 
         tag.save()?;
         Ok(())

@@ -2,7 +2,7 @@ use rodio::{OutputStream, Decoder, Sink, Source};
 use std::{io::{BufReader, Cursor}, thread, time::{Duration, Instant}};
 use log::{debug, error};
 
-use crate::{playerbus::{Command, Message, PlayerBus}, playlist::{BufferedTrack, Playlist}};
+use crate::{state::{Command, Message, PlayerBus}, playlist::{BufferedTrack, Playlist}};
 
 fn retry<T, E>(function: fn() -> Result<T, E>) -> T where E: std::fmt::Display {
     match function() {

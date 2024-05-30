@@ -10,7 +10,7 @@ use std::{time, thread};
 use log::{debug, info};
 
 use crate::config::{Config, Tidal};
-use crate::playerbus::{Message, PlayerBus};
+use crate::state::{Message, PlayerBus};
 
 #[derive(Debug)]
 #[derive(Clone)]

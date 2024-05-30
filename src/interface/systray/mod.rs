@@ -1,4 +1,4 @@
-use crate::playerbus::{Message, PlayerBus};
+use crate::state::{Message, PlayerBus};
 
 pub struct Systray {
     playerbus: PlayerBus,

@@ -2,7 +2,7 @@ use std::{fmt::Display, fs, process::Command};
 use macroquad::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::playerbus::State;
+use crate::state::State;
 
 use super::{Gui, Screen};
 
@@ -105,7 +105,7 @@ impl Screen for Actions {
                     WHITE
                 );
 
-                gui.player_bus.publish_message(crate::playerbus::Message::UserClickBackToPlayer);
+                gui.player_bus.publish_message(crate::state::Message::UserClickBackToPlayer);
                 return;
             }
         }

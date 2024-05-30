@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use macroquad::prelude::*;
 
-use crate::playerbus::{BroadcastChannel, Command, PlayerBus, State};
+use crate::state::{BroadcastChannel, Command, PlayerBus, State};
 
 use self::actions::Actions;
 use self::player::Player;

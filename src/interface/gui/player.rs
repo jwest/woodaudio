@@ -2,7 +2,7 @@ use std::time::Duration;
 use futures::executor;
 use macroquad::prelude::*;
 
-use crate::playerbus::{Message, PlayerBus, PlayerStateCase, State, TrackState};
+use crate::state::{Message, PlayerBus, PlayerStateCase, State, TrackState};
 
 use super::Screen;
 

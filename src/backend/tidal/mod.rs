@@ -5,7 +5,7 @@ use rand::thread_rng;
 use rand::seq::SliceRandom;
 use serde_json::Value;
 
-use crate::{config::Config, playerbus::PlayerBus, playlist::Track};
+use crate::{config::Config, state::PlayerBus, playlist::Track};
 use crate::playlist::{Cover, PlayableItem, PlayableItemId};
 use self::session::Session;
 use super::Backend;

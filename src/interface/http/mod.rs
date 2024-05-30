@@ -2,7 +2,7 @@ use log::info;
 use serde_json::Value;
 use tiny_http::{Response, Server};
 
-use crate::playerbus::{self, PlayerBus};
+use crate::state::{self, PlayerBus};
 
 pub fn server(player_bus: &PlayerBus) {
     let server = Server::http("0.0.0.0:8001").unwrap();
@@ -12,9 +12,9 @@ pub fn server(player_bus: &PlayerBus) {
             info!("[Server control] {}", request.url());
 
             match request.url() {
-                "/action/next" => player_bus.publish_message(playerbus::Message::UserPlayNext),
-                "/action/play" => player_bus.publish_message(playerbus::Message::UserPlay),
-                "/action/pause" => player_bus.publish_message(playerbus::Message::UserPause),
+                "/action/next" => player_bus.publish_message(state::Message::UserPlayNext),
+                "/action/play" => player_bus.publish_message(state::Message::UserPlay),
+                "/action/pause" => player_bus.publish_message(state::Message::UserPause),
                 "/action/play_by_url" => {
                     let mut content = String::new();
                     request.as_reader().read_to_string(&mut content).unwrap();
@@ -25,15 +25,15 @@ pub fn server(player_bus: &PlayerBus) {
                     let id = tidal_url.split('/').last().unwrap();
 
                     if tidal_url.starts_with("https://tidal.com/track/") {
-                        player_bus.publish_message(playerbus::Message::UserPlayTrack(id.to_string()));
+                        player_bus.publish_message(state::Message::UserPlayTrack(id.to_string()));
                     }
 
                     if tidal_url.starts_with("https://tidal.com/album/") {
-                        player_bus.publish_message(playerbus::Message::UserPlayAlbum(id.to_string()));
+                        player_bus.publish_message(state::Message::UserPlayAlbum(id.to_string()));
                     }
 
                     if tidal_url.starts_with("https://tidal.com/artist/") {
-                        player_bus.publish_message(playerbus::Message::UserPlayArtist(id.to_string()));
+                        player_bus.publish_message(state::Message::UserPlayArtist(id.to_string()));
                     }
                 },
                 _ => {}

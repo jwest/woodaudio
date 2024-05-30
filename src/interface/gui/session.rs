@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 use qrcode_generator::QrCodeEcc;
 
-use crate::playerbus::State;
+use crate::state::State;
 
 use super::Screen;
 
@@ -26,7 +26,7 @@ impl SessionGui {
 impl Screen for SessionGui {
     fn update(&mut self, state: State) {
         match state.backends.tidal {
-            crate::playerbus::BackendState::WaitingForLoginByLink(login_link) => {
+            crate::state::BackendState::WaitingForLoginByLink(login_link) => {
                 if self.device_login_link.is_none() {
                     let code = qrcode_generator::to_png_to_vec(login_link.as_bytes(), QrCodeEcc::Low, 300).unwrap();
                     self.qrcode_image = Some(Texture2D::from_file_with_format(&code, None));
