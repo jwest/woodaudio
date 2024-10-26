@@ -46,10 +46,10 @@ impl ScreenRegistry {
                 Some((i, screen)) => {
                     self.path = path;
                     self.active = i;
-                    debug!("[ScreenRegistry] navigated to {}, {:?}", i, screen.lock().unwrap().nav_id());
+                    log::debug!("[ScreenRegistry] navigated to {}, {:?}", i, screen.lock().unwrap().nav_id());
                     screen.lock().unwrap().on_show();
                 },
-                None => error!("[ScreenRegistry] Screen not found: {}", path),
+                None => log::error!("[ScreenRegistry] Screen not found: {}", path),
             }
     }
     fn update(&mut self, state: State) {

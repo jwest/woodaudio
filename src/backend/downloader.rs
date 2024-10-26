@@ -43,7 +43,7 @@ impl Downloader {
         }
     }
 
-    pub fn download_file(&self, track: Track) -> Result<BufferedTrack, Box<dyn Error>> {
+    pub fn download_file(&mut self, track: Track) -> Result<BufferedTrack, Box<dyn Error>> {
         if let Some(storage_file) = self.storage_file.lock().unwrap().as_mut() {
             match storage_file.read_file(&track.file_name(), None) {
                 Ok(Some(file)) => {

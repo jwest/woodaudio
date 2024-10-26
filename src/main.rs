@@ -9,7 +9,6 @@ use log::error;
 use macroquad::window::Conf;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::thread::{self, JoinHandle};
-use macroquad::miniquad::conf::{LinuxBackend, Platform};
 
 mod state;
 use state::PlayerBus;
@@ -40,6 +39,7 @@ fn downloader_module(playlist: Playlist, backend_init: BackendInitialization) {
         backend.discover();
 
         playlist.buffer_worker(|track| {
+            let mut backend = backend_init.get_initialized();
             match backend.download(track) {
                 Ok(buffered_track) => Some(buffered_track),
                 Err(err) => { error!("[Downloader] download file error: {:?}", err); None },

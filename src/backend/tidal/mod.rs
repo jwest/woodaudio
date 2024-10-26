@@ -1,7 +1,7 @@
 use std::{error::Error, time::Duration};
 use bytes::Bytes;
 use log::{error, info};
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
 use serde_json::Value;
 
@@ -28,8 +28,10 @@ impl Backend for TidalBackend {
         let _ = self.discover_mixes(&self.session, &discovery_fn);
         let _ = self.discover_favorities_tracks(&self.session, &discovery_fn);
     }
-    fn get_track(&self, track_id: String) -> Result<Bytes, Box<dyn Error>> {
+    fn get_track(&mut self, track_id: String) -> Result<Bytes, Box<dyn Error>> {
         for _ in 1..5 {
+            TidalBackend::sleep_for_health();
+
             match self.session.get_track_bytes(track_id.clone()) {
                 Ok(file) => return Ok(file),
                 Err(_) => continue,
@@ -46,6 +48,7 @@ impl Backend for TidalBackend {
     }
     fn discovery_track(&self, track_id: &str, discovery_fn: impl Fn(Vec<Track>)) {
         info!("[Discovery] Discover radio for track: {}", track_id);
+        TidalBackend::sleep_for_health();
         let radio = self.session.get_track_radio(track_id).unwrap();
         let tracks = Self::parse_tracks(&radio["items"]);
 
@@ -53,6 +56,7 @@ impl Backend for TidalBackend {
         discovery_fn(tracks);
     }
     fn discovery_album(&self, album_id: &str, discovery_fn: impl Fn(Vec<Track>)) {
+        TidalBackend::sleep_for_health();
         let album = self.session.get_album(album_id).unwrap();
         let tracks = Self::parse_tracks(&album["items"]);
 
@@ -60,6 +64,7 @@ impl Backend for TidalBackend {
         discovery_fn(tracks);
     }
     fn discovery_artist(&self, artist_id: &str, discovery_fn: impl Fn(Vec<Track>)) {
+        TidalBackend::sleep_for_health();
         let artist = self.session.get_artist(artist_id).unwrap();
         let tracks = Self::parse_tracks(&artist["items"]);
 
@@ -70,6 +75,7 @@ impl Backend for TidalBackend {
         let _ = self.session.add_track_to_favorites(track_id);
     }
     fn get_favorite_albums(&self) -> Vec<PlayableItem> {
+        TidalBackend::sleep_for_health();
         let v = self.session.get_favorite_albums().unwrap();
 
         let mut playable_items: Vec<PlayableItem> = vec![];
@@ -77,7 +83,6 @@ impl Backend for TidalBackend {
         if let Value::Array(items) = &v["items"] {
             for item in items {
                 if item["item"]["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                    error!("{:?}", item["item"]);
                     let cover_id = item["item"]["cover"].as_str().unwrap().replace('-', "/");
                     let cover_url = format!("https://resources.tidal.com/images/{}/{}x{}.jpg", cover_id, 320, 320);
                     playable_items.push(PlayableItem::init(PlayableItemId::album(item["item"]["id"].as_i64().unwrap().to_string()), item["item"]["artist"]["name"].as_str().unwrap().to_string(), item["item"]["title"].as_str().unwrap().to_string(), Some(Cover { foreground: Some(cover_url), background: None })));
@@ -139,6 +144,11 @@ impl TidalBackend {
         }
 
         tracks
+    }
+
+    fn sleep_for_health() {
+        let mut rng = rand::thread_rng();
+        std::thread::sleep(Duration::from_millis(rng.gen_range(800..1200)));
     }
 }
 

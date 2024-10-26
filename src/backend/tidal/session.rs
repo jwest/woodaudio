@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::error::Error;
 use std::time::Duration;
 use std::{time, thread};
-use log::{debug, info};
+use log::{debug, error, info};
 
 use crate::config::{Config, Tidal};
 use crate::state::{Message, PlayerBus};
@@ -183,6 +183,18 @@ impl Session {
         Self::refresh_token(config)?;
         Self::init(config)
     }
+    fn read_session(token: &str) -> Result<ResponseTidalSession, Box<dyn Error>> {
+        let mut headers = header::HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, header::HeaderValue::from_str(token).unwrap());
+
+        let client = reqwest::blocking::Client::builder()
+            .default_headers(headers)
+            .build()?;
+        let res = client.get("https://api.tidal.com/v1/sessions").send()?;
+
+        let session = res.json::<ResponseTidalSession>()?;
+        return Ok(session)
+    }
     fn refresh_token(config: &mut Config) -> Result<(), Box<dyn Error>> {
         let client = reqwest::blocking::Client::builder()
             .build()?;
@@ -269,7 +281,7 @@ impl Session {
             .send()?;
         Ok(())
     }
-    pub(super) fn get_track_url(&self, track_id: String) -> Result<String, Box<dyn Error>> {
+    pub(super) fn get_track_url(&mut self, track_id: String) -> Result<String, Box<dyn Error>> {
         let download_url = format!("{}/tracks/{}/urlpostpaywall?sessionId={}&urlusagemode=STREAM&audioquality={}&assetpresentation=FULL", self.api_path, track_id, self.session_id, self.audio_quality);
         debug!("Download track: {}, with url: {}", track_id, download_url);
         let response = self.request(download_url)?;
@@ -277,14 +289,20 @@ impl Session {
             let url = response.json::<ResponseMedia>()?.urls[0].clone();
             Ok(url)
         } else {
+            if response.status().is_client_error() {
+                let session = Self::read_session(self.token.as_str())?;
+                error!("[SESSION] renew session old: {}, new: {}", self.session_id, session.session_id);
+                self.session_id = self.session_id.clone();
+            }
             let status_code = response.status().to_string();
             let body_text = response.text()?;
             info!("[Client] Retry download track id: {} in 5s... ({}: {})", track_id, status_code, body_text);
+
             thread::sleep(time::Duration::from_secs(5));
             self.get_track_url(track_id)
         }
     }
-    pub(super) fn get_track_bytes(&self, track_id: String) -> Result<Bytes, Box<dyn Error>> {
+    pub(super) fn get_track_bytes(&mut self, track_id: String) -> Result<Bytes, Box<dyn Error>> {
         let url = self.get_track_url(track_id.clone())?;
             
         let file_response = Client::builder()

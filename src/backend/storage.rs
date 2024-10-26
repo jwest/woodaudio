@@ -4,7 +4,7 @@ use rand::seq::IteratorRandom;
 
 use bytes::{Buf, Bytes};
 use log::info;
-use metaflac::block::{Picture, PictureType, VorbisComment};
+use metaflac::block::{PictureType, VorbisComment};
 use metaflac::Tag;
 use suppaftp::{types::FileType, FtpStream};
 use tempfile::NamedTempFile;
