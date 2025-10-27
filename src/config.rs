@@ -48,7 +48,7 @@ impl Tidal {
             token_type: properties.get_string_with_default("token_type", "Bearer"),
             access_token: properties.get_string("access_token"),
             refresh_token: properties.get_string("refresh_token"),
-            audio_quality: properties.get_string_with_default("audio_quality", "HI_RES_LOSSLESS"),
+            audio_quality: properties.get_string_with_default("audio_quality", "LOSSLESS"),
         }
     }
     fn prepare_to_save(&self, ini: &mut Ini) {

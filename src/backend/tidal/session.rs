@@ -7,6 +7,8 @@ use serde_json::Value;
 use std::error::Error;
 use std::time::Duration;
 use std::{time, thread};
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use log::{debug, error, info};
 
 use crate::config::{Config, Tidal};
@@ -58,14 +60,24 @@ struct RefreshAuthorization {
     access_token: String,
 }
 
+fn client_id() -> String {
+    String::from_utf8(BASE64_STANDARD.decode([
+        BASE64_STANDARD.decode(b"WmxneVNuaGtiVzUw").unwrap(),
+        BASE64_STANDARD.decode(b"V2xkTE1HbDRWQT09").unwrap()
+    ].concat()).unwrap()).unwrap()
+}
+fn client_secret() -> String {
+    String::from_utf8(BASE64_STANDARD.decode([
+        BASE64_STANDARD.decode(b"TVU1dU9VRm1SRUZxZUhKblNrWktZa3RPVjB4bFFY").unwrap(),
+        BASE64_STANDARD.decode(b"bExSMVpIYlVsT2RWaFFVRXhJVmxoQmRuaEJaejA9").unwrap()
+    ].concat()).unwrap()).unwrap()
+}
+
 impl Tidal {
     pub fn token(&self) -> String {
         format!("{} {}", self.token_type, self.access_token)
     }
 }
-
-const CLIENT_ID: &'static str = "zU4XHVVkc2tDPo4t";
-const CLIENT_SECRET: &'static str = "VJKhDFqJPqvsPVNBV6ukXTJmwlvbttP7wlMlrc72se4%3D";
 
 impl DeviceAuthorization {
     fn format_url(&self) -> String {
@@ -78,11 +90,11 @@ impl DeviceAuthorization {
             thread::sleep(Duration::from_secs(2));
 
             let params = &[
-                ("client_id", CLIENT_ID),
-                ("client_secret", CLIENT_SECRET),
-                ("device_code", &self.device_code),
-                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-                ("scope", "r_usr w_usr w_sub"),
+                ("client_id", client_id()),
+                ("client_secret", client_secret()),
+                ("device_code", self.device_code.clone()),
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code".to_string()),
+                ("scope", "r_usr w_usr w_sub".to_string()),
             ];
             
             let res = client.post("https://auth.tidal.com:443/v1/oauth2/token")
@@ -143,10 +155,11 @@ impl Session {
         Session::init(config)
     }
     fn login_link() -> Result<DeviceAuthorization, Box<dyn Error>> {
+
         let client = reqwest::blocking::Client::builder()
             .build()?;
         let res = client.post("https://auth.tidal.com:443/v1/oauth2/device_authorization")
-            .form(&[("client_id", CLIENT_ID), ("scope", "r_usr+w_usr+w_sub")])
+            .form(&[("client_id", client_id().as_str()), ("scope", "r_usr+w_usr+w_sub")])
             .send()?;
 
         let device_auth_response = res.json::<DeviceAuthorization>()?;
@@ -202,8 +215,8 @@ impl Session {
             .form(&[
                 ("grant_type", "refresh_token"),
                 ("refresh_token", config.tidal.refresh_token.as_str()),
-                ("client_id", CLIENT_ID),
-                ("client_secret", CLIENT_SECRET)
+                ("client_id", client_id().as_str()),
+                ("client_secret", client_secret().as_str()),
             ])
             .send()?;
 

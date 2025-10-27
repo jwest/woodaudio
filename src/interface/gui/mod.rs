@@ -13,8 +13,8 @@ pub mod session;
 pub mod actions;
 pub mod player;
 
-#[cfg(target_os = "macos")]
-pub mod systray;
+// #[cfg(target_os = "macos")]
+// pub mod systray;
 mod browse;
 
 pub trait Screen {

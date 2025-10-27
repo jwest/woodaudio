@@ -181,7 +181,7 @@ impl Buttons {
     }
 
     fn widget_y(&self) -> f32 {
-        screen_height() - 48.0 - self.size
+        screen_height() - 36.0 - self.size
     }
 }
 
@@ -391,6 +391,6 @@ impl Screen for Player {
             }
         }
 
-        self.render_buttons(ui);
+        // self.render_buttons(ui);
     }
 }

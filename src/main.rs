@@ -98,11 +98,6 @@ fn main() {
     server_module(player_bus.clone());
 
     let player = player_module(playlist.clone(), player_bus.clone());
-    
-    #[cfg(target_os = "macos")]
-    if config.gui.systray_enabled {
-        Systray::init(player_bus.clone()).display();
-    }
 
     if config.gui.enabled {
         macroquad::Window::from_config(conf(config), gui_module(player_bus.clone()));
