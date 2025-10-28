@@ -264,12 +264,12 @@ impl Session {
         let result: Value = serde_json::from_str(&body)?;
         Ok(result)
     }
-    pub(super) fn get_favorite_albums(&self) -> Result<Value, Box<dyn Error>> {
-        let response = self.request(format!("{}/users/{}/favorites/albums?countryCode={}&limit=100&offset=0", self.api_path, self.user_id, self.country_code))?;
-        let body = response.text()?;
-        let result: Value = serde_json::from_str(&body)?;
-        Ok(result)
-    }
+    // pub(super) fn get_favorite_albums(&self) -> Result<Value, Box<dyn Error>> {
+    //     let response = self.request(format!("{}/users/{}/favorites/albums?countryCode={}&limit=100&offset=0", self.api_path, self.user_id, self.country_code))?;
+    //     let body = response.text()?;
+    //     let result: Value = serde_json::from_str(&body)?;
+    //     Ok(result)
+    // }
     pub(super) fn get_album(&self, album_id: &str) -> Result<Value, Box<dyn Error>> {
         let response = self.request(format!("{}/albums/{}/tracks?countryCode={}&deviceType=BROWSER", self.api_path, album_id, self.country_code))?;
         let body = response.text()?;

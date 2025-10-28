@@ -1,0 +1,88 @@
+import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+import "./static/NotoSans_Condensed-Light.ttf";
+
+export global Data {
+    in property <bool> is_session_exist;
+    in property <image> session_qrcode;
+    in property <string> session_code;
+
+    in property <string> current_track_name;
+    in property <string> current_album_name;
+    in property <string> current_artist_name;
+
+    in property <string> current_duration;
+    in property <string> current_track_duration;
+    in property <percent> current_duration_percentage;
+
+    callback request_new_value();
+}
+
+component Player {
+    VerticalBox {
+        alignment: LayoutAlignment.start;
+
+        Text {
+            text: "\{Data.current_track_name}";
+            font-family: "Noto Sans Condensed";
+            font-weight: 800;
+            font-size: 48px;
+        }
+        Text {
+            text: "\{Data.current_artist_name} - \{Data.current_album_name}";
+            font-family: "Noto Sans Condensed";
+            font-size: 32px;
+        }
+        HorizontalBox {
+            Text {
+                text: "\{Data.current_duration} / \{Data.current_track_duration}";
+                font-family: "Noto Sans Condensed";
+                font-size: 12px;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+component Session {
+    VerticalBox {
+        alignment: LayoutAlignment.start;
+
+        Text {
+            text: "Hello in Woodaudio player!";
+            font-family: "Noto Sans Condensed";
+            font-weight: 800;
+            font-size: 48px;
+        }
+        Text {
+            text: "Login to Tidal via: \{Data.session_code}";
+            font-family: "Noto Sans Condensed";
+            font-size: 32px;
+        }
+        Image {
+            source: Data.session_qrcode;
+            width: 300px;
+            height: 300px;
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    in property <string> track_name: "Track";
+
+    Player {
+        visible: Data.is_session_exist;
+    }
+
+    Session {
+        visible: !Data.is_session_exist;
+    }
+
+    Timer {
+        interval: 15ms;
+        running: true;
+        triggered => {
+            Data.request_new_value();
+        }
+    }
+}

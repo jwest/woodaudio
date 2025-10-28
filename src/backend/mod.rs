@@ -5,7 +5,7 @@ use bytes::Bytes;
 use crate::{config::Config, state::{self, PlayerBus}, playlist::{BufferedTrack, Playlist, Track}};
 use crate::backend::cover::CoverProcessor;
 use crate::backend::storage::{CacheRandomRead, FileStorage};
-use crate::playlist::{BufferedCover, PlayableItem};
+use crate::playlist::BufferedCover;
 
 use self::{downloader::Downloader, tidal::TidalBackend};
 
@@ -24,7 +24,6 @@ pub trait Backend {
     fn discovery_album(&self, id: &str, discovery_fn: impl Fn(Vec<Track>));
     fn discovery_artist(&self, id: &str, discovery_fn: impl Fn(Vec<Track>));
     fn add_track_to_favorites(&self, track_id: &str);
-    fn get_favorite_albums(&self) -> Vec<PlayableItem>;
 }
 
 #[derive(Clone)]
@@ -147,10 +146,6 @@ impl BackendService {
                 Some(state::Command::Like(track_id)) => {
                     let _ = self.tidal.add_track_to_favorites(&track_id);
                     self.playerbus.lock().unwrap().publish_message(state::Message::TrackAddedToFavorites);
-                },
-                Some(state::Command::LoadLikedAlbum) => {
-                    let playable_items = self.tidal.get_favorite_albums();
-                    self.playerbus.lock().unwrap().publish_message(state::Message::BrowsingPlayableItemsReady(playable_items));
                 },
                 Some(state::Command::LoadCover(cover_url)) => {
                     let cover_path = CoverProcessor::new(self.tidal.get_cover(cover_url.clone()).unwrap()).generate_foreground().unwrap();

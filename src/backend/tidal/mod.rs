@@ -1,12 +1,12 @@
 use std::{error::Error, time::Duration};
 use bytes::Bytes;
-use log::{error, info};
+use log::info;
 use rand::{thread_rng, Rng};
 use rand::seq::SliceRandom;
 use serde_json::Value;
 
 use crate::{config::Config, state::PlayerBus, playlist::Track};
-use crate::playlist::{Cover, PlayableItem, PlayableItemId};
+use crate::playlist::Cover;
 use self::session::Session;
 use super::Backend;
 
@@ -73,24 +73,6 @@ impl Backend for TidalBackend {
     }
     fn add_track_to_favorites(&self, track_id: &str) {
         let _ = self.session.add_track_to_favorites(track_id);
-    }
-    fn get_favorite_albums(&self) -> Vec<PlayableItem> {
-        TidalBackend::sleep_for_health();
-        let v = self.session.get_favorite_albums().unwrap();
-
-        let mut playable_items: Vec<PlayableItem> = vec![];
-
-        if let Value::Array(items) = &v["items"] {
-            for item in items {
-                if item["item"]["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                    let cover_id = item["item"]["cover"].as_str().unwrap().replace('-', "/");
-                    let cover_url = format!("https://resources.tidal.com/images/{}/{}x{}.jpg", cover_id, 320, 320);
-                    playable_items.push(PlayableItem::init(PlayableItemId::album(item["item"]["id"].as_i64().unwrap().to_string()), item["item"]["artist"]["name"].as_str().unwrap().to_string(), item["item"]["title"].as_str().unwrap().to_string(), Some(Cover { foreground: Some(cover_url), background: None })));
-                }
-            }
-        }
-
-        playable_items
     }
 }
 

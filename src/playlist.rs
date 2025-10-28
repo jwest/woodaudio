@@ -27,50 +27,6 @@ impl Track {
     }
 }
 
-#[derive(Debug)]
-#[derive(Clone)]
-pub enum PlayableItemMediaType {
-    Album,
-}
-
-#[derive(Debug)]
-#[derive(Clone)]
-pub struct PlayableItemId {
-    id: String,
-    media_type: PlayableItemMediaType
-}
-
-impl PlayableItemId {
-    pub fn album(id: String) -> Self {
-        Self { id, media_type: PlayableItemMediaType::Album }
-    }
-
-    pub fn get_id(&self) -> String { self.id.clone() }
-    pub fn get_media_type(&self) -> PlayableItemMediaType { self.media_type.clone() }
-}
-
-#[derive(Debug)]
-#[derive(Clone)]
-pub struct PlayableItem {
-    id: PlayableItemId,
-    artist: String,
-    title: String,
-    cover: Option<Cover>,
-}
-
-impl PlayableItem {
-    pub fn init(id: PlayableItemId, artist: String, title: String, cover: Option<Cover>) -> Self {
-        Self {
-            id, artist, title, cover,
-        }
-    }
-
-    pub fn get_id(&self) -> PlayableItemId { self.id.clone() }
-    pub fn get_artist(&self) -> String { self.artist.clone() }
-    pub fn get_title(&self) -> String { self.title.clone() }
-    pub fn get_cover(&self) -> Option<Cover> { self.cover.clone() }
-}
-
 impl fmt::Debug for Track {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Track: {}, {}", self.id, self.full_name())

@@ -5,7 +5,7 @@ use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use log::{debug, info};
 
-use crate::playlist::{BufferedCover, BufferedTrack, Cover, PlayableItem, Track};
+use crate::playlist::{BufferedCover, BufferedTrack, Cover, Track};
 
 #[derive(Debug)]
 #[derive(Clone)]
@@ -18,6 +18,7 @@ pub enum Command {
     PlayTrackForce(String),
     PlayAlbumForce(String),
     PlayArtistForce(String),
+    #[warn(dead_code)]
     ShowScreen(String),
     AddTracksToPlaylist(Vec<Track>),
     AddTracksToPlaylistForce(Vec<Track>),
@@ -82,7 +83,6 @@ pub enum Message {
     TrackLoaded,
     AlbumTracksLoaded,
     ArtistTracksLoaded,
-    BrowsingPlayableItemsReady(Vec<PlayableItem>),
     CoverLoaded(BufferedCover),
     CoverNeeded(String),
 }
@@ -93,7 +93,6 @@ pub struct State {
     pub player: PlayerState,
     pub track: Option<TrackState>,
     pub backends: BackendsState,
-    pub browser: Option<BrowserState>,
     pub covers: Covers,
 }
 
@@ -132,12 +131,6 @@ pub enum BackendState {
 #[derive(Clone)]
 pub struct BackendsState {
     pub tidal: BackendState,
-}
-
-#[derive(Debug)]
-#[derive(Clone)]
-pub struct BrowserState {
-    pub items: Vec<PlayableItem>,
 }
 
 #[derive(Debug)]
@@ -284,7 +277,6 @@ impl State {
             backends: BackendsState { 
                 tidal: BackendState::Off
             },
-            browser: None,
             covers: Covers::init(),
         }
     }
@@ -330,7 +322,6 @@ impl PlayerBus {
             Message::TrackLoaded => { self.publish_command(Command::Next); prev_state },
             Message::AlbumTracksLoaded => { self.publish_command(Command::Next); prev_state },
             Message::ArtistTracksLoaded => { self.publish_command(Command::Next); prev_state },
-            Message::BrowsingPlayableItemsReady(items) => State { browser: Some(BrowserState { items }), ..prev_state },
             Message::CoverNeeded(cover_url) => { self.publish_command(Command::LoadCover(cover_url)); prev_state },
             Message::CoverLoaded(cover) => State { covers: prev_state.covers.add_and_build(cover), ..prev_state },
         };

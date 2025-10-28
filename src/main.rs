@@ -3,7 +3,6 @@ use env_logger::Target;
 use interface::gui::Gui;
 
 use log::error;
-use macroquad::window::Conf;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::thread::{self, JoinHandle};
 
@@ -61,21 +60,9 @@ fn player_module(playlist: Playlist, player_bus: PlayerBus) -> JoinHandle<()> {
     }).unwrap()
 }
 
-async fn gui_module(player_bus: PlayerBus) {
+fn gui_module(player_bus: PlayerBus) {
     Gui::init(player_bus.clone())
         .gui_loop()
-        .await;
-}
-
-fn conf(config: Config) -> Conf {
-    Conf {
-        window_title: "Woodaudio".to_string(),
-        fullscreen: config.gui.fullscreen,
-        window_height: 600,
-        window_width: 1024,
-        window_resizable: false,    
-        ..Default::default()
-    }
 }
 
 fn main() {
@@ -97,7 +84,7 @@ fn main() {
     let player = player_module(playlist.clone(), player_bus.clone());
 
     if config.gui.enabled {
-        macroquad::Window::from_config(conf(config), gui_module(player_bus.clone()));
+        gui_module(player_bus.clone());
     } else {
         let _ = player.join();
     }

@@ -1,131 +1,79 @@
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use macroquad::prelude::*;
+use image::Rgb;
+use qrcode::QrCode;
+use slint::{Image, LogicalSize, Rgb8Pixel, SharedPixelBuffer, WindowSize};
 
-use crate::state::{BroadcastChannel, Command, PlayerBus, State};
+use crate::state::{BackendState, PlayerBus};
 
-use self::actions::Actions;
-use self::player::Player;
-use self::session::SessionGui;
-use self::browse::Browse;
-
-pub mod session;
-pub mod actions;
-pub mod player;
-
-// #[cfg(target_os = "macos")]
-// pub mod systray;
-mod browse;
-
-pub trait Screen {
-    fn nav_id(&self) -> String;
-    fn on_show(&mut self);
-    fn update(&mut self, state: State);
-    fn render(&self, ui: &Gui);
-}
-
-#[derive(Clone)]
-pub struct ScreenRegistry {
-    path: String,
-    active: usize,
-    screens: Vec<Arc<Mutex<Box<dyn Screen>>>>,
-}
-
-impl ScreenRegistry {
-    fn init(screens: Vec<Box<dyn Screen>>) -> Self {
-        Self {
-            path: screens[0].nav_id(),
-            active: 0,
-            screens: screens.into_iter().map(|b| Arc::new(Mutex::new(b))).collect()
-        }
-    }
-    fn navigate(&mut self, path: String) {
-        match self.screens.iter()
-            .enumerate()
-            .find(|(_, screen)| screen.lock().unwrap().nav_id().eq(&path)) {
-                Some((i, screen)) => {
-                    self.path = path;
-                    self.active = i;
-                    log::debug!("[ScreenRegistry] navigated to {}, {:?}", i, screen.lock().unwrap().nav_id());
-                    screen.lock().unwrap().on_show();
-                },
-                None => log::error!("[ScreenRegistry] Screen not found: {}", path),
-            }
-    }
-    fn update(&mut self, state: State) {
-        self.screens[self.active].lock().unwrap().update(state);
-    }
-    fn render(&self, ui: &Gui) {
-        self.screens[self.active].lock().unwrap().render(ui);
-    }
-}
+slint::include_modules!();
 
 pub struct Gui {
     player_bus: PlayerBus,
-    channel: BroadcastChannel,
-    screen_registry: ScreenRegistry,
-    state: State,
-    fonts: Fonts,
+    ui: AppWindow,
 }
 
-pub struct Fonts{
-    title: Font,
-    subtitle: Font,
-    icons: Font,
+fn duration_formated(duration: &Duration) -> String {
+    let seconds = duration.as_secs() % 60;
+    let minutes = (duration.as_secs() / 60) % 60;
+    format!("{minutes}:{seconds:0>2}")
 }
 
 impl Gui {
-    pub fn init(mut player_bus: PlayerBus) -> Gui {
-        let state = State::default_state();
+    pub fn init(player_bus: PlayerBus) -> Gui {
+        let ui = AppWindow::new().unwrap();
+        ui.set_track_name("new track!".into());
 
-        let channel = player_bus.register_command_channel(vec!["ShowScreen".to_string()]);
-
-        let fonts = Fonts {
-            title: load_ttf_font_from_bytes(include_bytes!("../../../static/NotoSans_Condensed-SemiBold.ttf")).unwrap(),
-            subtitle: load_ttf_font_from_bytes(include_bytes!("../../../static/NotoSans_Condensed-Light.ttf")).unwrap(),
-            icons: load_ttf_font_from_bytes(include_bytes!("../../../static/fontello.ttf")).unwrap(),
-        };
-
-        Gui { 
-            player_bus: player_bus.clone(),
-            channel,
-            state,
-            screen_registry: ScreenRegistry::init(vec![
-                Box::new(SessionGui::init()),
-                Box::new(Player::init(player_bus.clone())),
-                Box::new(Actions::init(home::home_dir().unwrap().join(".config/woodaudio/actions.json").to_str().unwrap().to_string())),
-                Box::new(Browse::init(player_bus)),
-            ]),
-            fonts,
-        }
+        Self { player_bus, ui }
     }
+    pub fn gui_loop(&mut self) {
+        self.ui.window().set_size(WindowSize::Logical(LogicalSize::new(1024.0, 600.0)));
 
-    async fn update_state(&mut self) {
-        let new_state = self.player_bus.read_state();
-        self.state = new_state;
-    }
+        let main_window_weak = self.ui.as_weak();
+        let bus = self.player_bus.clone();
 
-    fn render_screen(&mut self) {
-        clear_background(BLACK);
-    
-        let command = self.channel.read_command();
-        match command {
-            Some(Command::ShowScreen(path)) => {
-                self.screen_registry.navigate(path);
-            },
-            _ => {}
-        }
+        self.ui.global::<Data>().on_request_new_value(move || {
+            let current_state = bus.read_state().clone();
 
-        self.screen_registry.update(self.state.clone());
-        self.screen_registry.render(self);
-    }
+            let current_track_name = current_state.track.clone().map( |track| track.title).unwrap_or("Loading...".to_string());
+            let current_artist_name = current_state.track.clone().map( |track| track.artist_name).unwrap_or("".to_string());
+            let current_album_name = current_state.track.clone().map( |track| track.album_name).unwrap_or("".to_string());
 
-    pub async fn gui_loop(&mut self) {
-        loop {
-            self.update_state().await;
-            self.render_screen();
-            next_frame().await;
-            std::thread::sleep(Duration::from_millis(20));
-        }
+            let current_track_duration = &current_state.track.clone().map( |track| track.duration).unwrap_or(Duration::ZERO);
+            let current_duration = &current_state.player.playing_time.unwrap_or(Duration::ZERO);
+
+            if let Some(handle) = main_window_weak.upgrade() {
+                handle.global::<Data>().set_current_track_name(current_track_name.into());
+                handle.global::<Data>().set_current_artist_name(current_artist_name.into());
+                handle.global::<Data>().set_current_album_name(current_album_name.into());
+
+                handle.global::<Data>().set_current_track_duration(duration_formated(current_track_duration).into());
+                handle.global::<Data>().set_current_duration(duration_formated(current_duration).into());
+                handle.global::<Data>().set_current_duration_percentage(current_duration.as_secs_f32() / current_track_duration.as_secs_f32());
+
+                match current_state.backends.tidal {
+                    BackendState::WaitingForLoginByLink(login_link) => {
+                        handle.global::<Data>().set_is_session_exist(false);
+                        handle.global::<Data>().set_session_code(login_link.clone().into());
+
+                        let qrcode = QrCode::new(login_link).unwrap();
+                        let image = qrcode.render::<Rgb<u8>>().build();
+                        let pixel_buffer = SharedPixelBuffer::<Rgb8Pixel>::clone_from_slice(
+                            image.as_raw(),
+                            image.width(),
+                            image.height(),
+                        );
+
+                        handle.global::<Data>().set_session_qrcode(Image::from_rgb8(pixel_buffer));
+                    }
+                    _ => {
+                        handle.global::<Data>().set_is_session_exist(true);
+                        handle.global::<Data>().set_session_code(String::new().into());
+                        handle.global::<Data>().set_session_qrcode(Image::default());
+                    }
+                }
+            }
+        });
+
+        self.ui.run().unwrap();
     }
 }
