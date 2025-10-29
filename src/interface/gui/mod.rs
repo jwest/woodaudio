@@ -1,9 +1,12 @@
+use std::fs::File;
+use std::io::BufReader;
 use std::time::Duration;
-use image::Rgb;
+use image::{ImageFormat, Rgb};
+use image::io::Reader;
 use qrcode::QrCode;
 use slint::{Image, LogicalSize, Rgb8Pixel, SharedPixelBuffer, WindowSize};
 
-use crate::state::{BackendState, PlayerBus};
+use crate::state::{BackendState, Command, PlayerBus, PlayerStateCase};
 
 slint::include_modules!();
 
@@ -21,8 +24,6 @@ fn duration_formated(duration: &Duration) -> String {
 impl Gui {
     pub fn init(player_bus: PlayerBus) -> Gui {
         let ui = AppWindow::new().unwrap();
-        ui.set_track_name("new track!".into());
-
         Self { player_bus, ui }
     }
     pub fn gui_loop(&mut self) {
@@ -31,12 +32,20 @@ impl Gui {
         let main_window_weak = self.ui.as_weak();
         let bus = self.player_bus.clone();
 
+        let request_next_bus = bus.clone();
+        self.ui.global::<Data>().on_request_next_track(move || {
+            request_next_bus.publish_command(Command::Next);
+        });
+
         self.ui.global::<Data>().on_request_new_value(move || {
             let current_state = bus.read_state().clone();
 
             let current_track_name = current_state.track.clone().map( |track| track.title).unwrap_or("Loading...".to_string());
             let current_artist_name = current_state.track.clone().map( |track| track.artist_name).unwrap_or("".to_string());
             let current_album_name = current_state.track.clone().map( |track| track.album_name).unwrap_or("".to_string());
+
+            let current_cover_foreground = current_state.track.clone().map(|track| track.cover.foreground).flatten();
+            let current_cover_background = current_state.track.clone().map(|track| track.cover.background).flatten();
 
             let current_track_duration = &current_state.track.clone().map( |track| track.duration).unwrap_or(Duration::ZERO);
             let current_duration = &current_state.player.playing_time.unwrap_or(Duration::ZERO);
@@ -49,6 +58,36 @@ impl Gui {
                 handle.global::<Data>().set_current_track_duration(duration_formated(current_track_duration).into());
                 handle.global::<Data>().set_current_duration(duration_formated(current_duration).into());
                 handle.global::<Data>().set_current_duration_percentage(current_duration.as_secs_f32() / current_track_duration.as_secs_f32());
+
+                if let Some(cover) = current_cover_background {
+                    let image = Reader::open(cover.as_str()).unwrap()
+                        .with_guessed_format().unwrap()
+                        .decode().unwrap();
+
+                    let buffer = SharedPixelBuffer::<Rgb8Pixel>::clone_from_slice(
+                        image.as_rgb8().expect("Fault image to buffer!"),
+                        image.width(),
+                        image.height()
+                    );
+                    handle.global::<Data>().set_current_cover_background(Image::from_rgb8(buffer));
+                } else {
+                    handle.global::<Data>().set_current_cover_background(Image::default());
+                }
+
+                if let Some(cover) = current_cover_foreground {
+                    let image = Reader::open(cover.as_str()).unwrap()
+                        .with_guessed_format().unwrap()
+                        .decode().unwrap();
+
+                    let buffer = SharedPixelBuffer::<Rgb8Pixel>::clone_from_slice(
+                        image.as_rgb8().expect("Fault image to buffer!"),
+                        image.width(),
+                        image.height()
+                    );
+                    handle.global::<Data>().set_current_cover_foreground(Image::from_rgb8(buffer));
+                } else {
+                    handle.global::<Data>().set_current_cover_foreground(Image::default());
+                }
 
                 match current_state.backends.tidal {
                     BackendState::WaitingForLoginByLink(login_link) => {

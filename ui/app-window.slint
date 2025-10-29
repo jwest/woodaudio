@@ -1,6 +1,7 @@
 import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
 
 import "./static/NotoSans_Condensed-Light.ttf";
+import "./static/NotoSans_Condensed-SemiBold.ttf";
 
 export global Data {
     in property <bool> is_session_exist;
@@ -11,37 +12,112 @@ export global Data {
     in property <string> current_album_name;
     in property <string> current_artist_name;
 
+    in property <image> current_cover_foreground;
+    in property <image> current_cover_background;
+
     in property <string> current_duration;
     in property <string> current_track_duration;
     in property <percent> current_duration_percentage;
 
     callback request_new_value();
+    callback request_next_track();
 }
 
 component Player {
-    VerticalBox {
-        alignment: LayoutAlignment.start;
-
-        Text {
-            text: "\{Data.current_track_name}";
-            font-family: "Noto Sans Condensed";
-            font-weight: 800;
-            font-size: 48px;
-        }
-        Text {
-            text: "\{Data.current_artist_name} - \{Data.current_album_name}";
-            font-family: "Noto Sans Condensed";
-            font-size: 32px;
-        }
-        HorizontalBox {
-            Text {
-                text: "\{Data.current_duration} / \{Data.current_track_duration}";
-                font-family: "Noto Sans Condensed";
-                font-size: 12px;
-                horizontal-alignment: right;
-            }
-        }
+    Text {
+        text: "\{Data.current_track_name}";
+        font-family: "Noto Sans Condensed";
+        font-weight: 800;
+        font-size: 48px;
+        x: 34px;
+        y: 34px;
+        color: black;
     }
+    Text {
+        text: "\{Data.current_track_name}";
+        font-family: "Noto Sans Condensed";
+        font-weight: 800;
+        font-size: 48px;
+        x: 32px;
+        y: 32px;
+        color: white;
+    }
+
+    Text {
+        text: "\{Data.current_artist_name} - \{Data.current_album_name}";
+        font-family: "Noto Sans Condensed";
+        font-size: 32px;
+        x: 33px;
+        y: 97px;
+        color: black;
+    }
+    Text {
+        text: "\{Data.current_artist_name} - \{Data.current_album_name}";
+        font-family: "Noto Sans Condensed";
+        font-size: 32px;
+        x: 32px;
+        y: 96px;
+        color: white;
+    }
+
+    Image {
+        source: Data.current_cover_foreground;
+        width: 320px;
+        height: 320px;
+        x: 352px;
+        y: 172px;
+    }
+
+    Rectangle {
+        background: black;
+        opacity: 0.3;
+        height: 3px;
+        width: 600px;
+        x: 213px;
+        y: 541px;
+    }
+    Rectangle {
+        background: white;
+        height: 5px;
+        width: 600px * Data.current_duration_percentage * 100;
+        x: 212px;
+        y: 540px;
+    }
+
+    Text {
+        text: "\{Data.current_duration}";
+        font-family: "Noto Sans Condensed";
+        font-weight: 800;
+        font-size: 14px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        x: 150px;
+        y: 532px;
+        width: 62px;
+        color: white;
+    }
+
+    Text {
+        text: "\{Data.current_track_duration}";
+        font-family: "Noto Sans Condensed";
+        font-weight: 800;
+        font-size: 14px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        x: 812px;
+        y: 532px;
+        width: 62px;
+        color: white;
+    }
+
+//    HorizontalBox {
+//                Text {
+//                    text: "\{Data.current_duration} / \{Data.current_track_duration}";
+//                    font-family: "Noto Sans Condensed";
+//                    font-size: 12px;
+//                    horizontal-alignment: right;
+//                }
+//            }
 }
 
 component Session {
@@ -68,10 +144,25 @@ component Session {
 }
 
 export component AppWindow inherits Window {
-    in property <string> track_name: "Track";
+    Image {
+        width: 1024px;
+        height: 1024px;
+        x: 0;
+        y: -212px;
+        horizontal-alignment: center;
+        source: Data.current_cover_background;
+    }
 
     Player {
         visible: Data.is_session_exist;
+        x: 0;
+        y: 0;
+    }
+    SwipeGestureHandler {
+        handle-swipe-right: true;
+        swiped => {
+            Data.request_next_track();
+        }
     }
 
     Session {
