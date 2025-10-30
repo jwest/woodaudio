@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use std::error::Error;
 use std::time::Duration;
-use std::{time, thread};
+use std::thread;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use log::{debug, error, info};
@@ -309,10 +309,9 @@ impl Session {
             }
             let status_code = response.status().to_string();
             let body_text = response.text()?;
-            info!("[Client] Retry download track id: {} in 5s... ({}: {})", track_id, status_code, body_text);
+            info!("[Client] Failed to download track id: {} (status: {}, body: {})", track_id, status_code, body_text);
 
-            thread::sleep(time::Duration::from_secs(5));
-            self.get_track_url(track_id)
+            Err(format!("Failed to download track id: {} (status: {}, body: {})", track_id, status_code, body_text).into())
         }
     }
     pub(super) fn get_track_bytes(&mut self, track_id: String) -> Result<Bytes, Box<dyn Error>> {

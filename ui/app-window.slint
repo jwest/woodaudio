@@ -5,6 +5,7 @@ import "./static/NotoSans_Condensed-SemiBold.ttf";
 
 export global Data {
     in property <bool> is_session_exist;
+    in property <bool> is_loading;
     in property <image> session_qrcode;
     in property <string> session_code;
 
@@ -23,41 +24,61 @@ export global Data {
     callback request_next_track();
 }
 
-component Player {
-    Text {
-        text: "\{Data.current_track_name}";
-        font-family: "Noto Sans Condensed";
-        font-weight: 800;
-        font-size: 48px;
-        x: 34px;
-        y: 34px;
-        color: black;
-    }
-    Text {
-        text: "\{Data.current_track_name}";
-        font-family: "Noto Sans Condensed";
-        font-weight: 800;
-        font-size: 48px;
-        x: 32px;
-        y: 32px;
-        color: white;
-    }
+component TextShadow {
+    in property <string> text;
+    in property <bool> is-bold: false;
+    in property <length> font-size: 32px;
+    in property <TextHorizontalAlignment> horizontal-alignment: center;
+    in property <TextVerticalAlignment> vertical-alignment: center;
 
     Text {
-        text: "\{Data.current_artist_name} - \{Data.current_album_name}";
+        text: text;
         font-family: "Noto Sans Condensed";
-        font-size: 32px;
-        x: 33px;
-        y: 97px;
+        font-weight: is-bold ? 800 : 400;
+        font-size: font-size;
+        x: is-bold ? 2px : 1px;
+        y: is-bold ? 2px : 1px;
         color: black;
+        horizontal-alignment: horizontal-alignment;
+        vertical-alignment: vertical-alignment;
     }
     Text {
-        text: "\{Data.current_artist_name} - \{Data.current_album_name}";
+        text: text;
         font-family: "Noto Sans Condensed";
+        font-weight: is-bold ? 800 : 400;
+        font-size: font-size;
+        x: 0px;
+        y: 0px;
+        color: white;
+        horizontal-alignment: horizontal-alignment;
+        vertical-alignment: vertical-alignment;
+    }
+}
+
+component Player {
+    TextShadow {
+        text: "\{Data.current_track_name}";
+        is-bold: true;
+        font-size: 48px;
+        x: 32px;
+        y: 24px;
+    }
+
+    TextShadow {
+        text: "\{Data.current_artist_name} - \{Data.current_album_name}";
         font-size: 32px;
         x: 32px;
-        y: 96px;
-        color: white;
+        y: 88px;
+    }
+
+    Rectangle {
+        width: 320px;
+        height: 320px;
+        x: 352px;
+        y: 172px;
+        drop-shadow-color: black;
+        drop-shadow-blur: 25px;
+        opacity: 0.7;
     }
 
     Image {
@@ -84,40 +105,27 @@ component Player {
         y: 540px;
     }
 
-    Text {
+    TextShadow {
         text: "\{Data.current_duration}";
-        font-family: "Noto Sans Condensed";
-        font-weight: 800;
+        is-bold: true;
         font-size: 14px;
         horizontal-alignment: center;
         vertical-alignment: center;
         x: 150px;
         y: 532px;
         width: 62px;
-        color: white;
     }
 
-    Text {
+    TextShadow {
         text: "\{Data.current_track_duration}";
-        font-family: "Noto Sans Condensed";
-        font-weight: 800;
+        is-bold: true;
         font-size: 14px;
         horizontal-alignment: center;
         vertical-alignment: center;
-        x: 812px;
+        x: 837px;
         y: 532px;
         width: 62px;
-        color: white;
     }
-
-//    HorizontalBox {
-//                Text {
-//                    text: "\{Data.current_duration} / \{Data.current_track_duration}";
-//                    font-family: "Noto Sans Condensed";
-//                    font-size: 12px;
-//                    horizontal-alignment: right;
-//                }
-//            }
 }
 
 component Session {
@@ -143,7 +151,19 @@ component Session {
     }
 }
 
+component Loading {
+    TextShadow {
+        text: "Loading...";
+        is-bold: true;
+        font-size: 48px;
+        x: 32px;
+        y: 24px;
+    }
+}
+
 export component AppWindow inherits Window {
+    background: black;
+
     Image {
         width: 1024px;
         height: 1024px;
@@ -154,7 +174,7 @@ export component AppWindow inherits Window {
     }
 
     Player {
-        visible: Data.is_session_exist;
+        visible: !Data.is_loading && Data.is_session_exist;
         x: 0;
         y: 0;
     }
@@ -163,6 +183,12 @@ export component AppWindow inherits Window {
         swiped => {
             Data.request_next_track();
         }
+    }
+
+    Loading {
+        visible: Data.is_session_exist && Data.is_loading;
+        x: 0;
+        y: 0;
     }
 
     Session {

@@ -1,7 +1,5 @@
-use std::fs::File;
-use std::io::BufReader;
 use std::time::Duration;
-use image::{ImageFormat, Rgb};
+use image::Rgb;
 use image::io::Reader;
 use qrcode::QrCode;
 use slint::{Image, LogicalSize, Rgb8Pixel, SharedPixelBuffer, WindowSize};
@@ -40,6 +38,11 @@ impl Gui {
         self.ui.global::<Data>().on_request_new_value(move || {
             let current_state = bus.read_state().clone();
 
+            let is_loading = match current_state.player.case {
+                PlayerStateCase::Loading => true,
+                _ => false,
+            };
+
             let current_track_name = current_state.track.clone().map( |track| track.title).unwrap_or("Loading...".to_string());
             let current_artist_name = current_state.track.clone().map( |track| track.artist_name).unwrap_or("".to_string());
             let current_album_name = current_state.track.clone().map( |track| track.album_name).unwrap_or("".to_string());
@@ -51,6 +54,8 @@ impl Gui {
             let current_duration = &current_state.player.playing_time.unwrap_or(Duration::ZERO);
 
             if let Some(handle) = main_window_weak.upgrade() {
+                handle.global::<Data>().set_is_loading(is_loading);
+
                 handle.global::<Data>().set_current_track_name(current_track_name.into());
                 handle.global::<Data>().set_current_artist_name(current_artist_name.into());
                 handle.global::<Data>().set_current_album_name(current_album_name.into());
