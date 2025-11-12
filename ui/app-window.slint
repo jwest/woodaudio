@@ -20,6 +20,12 @@ export global Data {
     in property <string> current_track_duration;
     in property <percent> current_duration_percentage;
 
+    in property <int> window_x;
+    in property <int> window_y;
+
+    out property <float> window_x_ratio: window_x / 1024;
+    out property <float> window_y_ratio: window_y / 600;
+
     callback request_new_value();
     callback request_next_track();
 }
@@ -59,23 +65,23 @@ component Player {
     TextShadow {
         text: "\{Data.current_track_name}";
         is-bold: true;
-        font-size: 48px;
-        x: 32px;
-        y: 24px;
+        font-size: 48px * Data.window_x_ratio;
+        x: 32px * Data.window_x_ratio;
+        y: 24px * Data.window_y_ratio;
     }
 
     TextShadow {
         text: "\{Data.current_artist_name} - \{Data.current_album_name}";
-        font-size: 32px;
-        x: 32px;
-        y: 88px;
+        font-size: 32px * Data.window_x_ratio;
+        x: 32px * Data.window_x_ratio;
+        y: 88px * Data.window_y_ratio;
     }
 
     Rectangle {
-        width: 320px;
-        height: 320px;
-        x: 352px;
-        y: 172px;
+        width: 320px * Data.window_x_ratio;
+        height: 320px * Data.window_x_ratio;
+        x: 352px * Data.window_x_ratio;
+        y: 172px * Data.window_y_ratio;
         drop-shadow-color: black;
         drop-shadow-blur: 25px;
         opacity: 0.7;
@@ -83,26 +89,26 @@ component Player {
 
     Image {
         source: Data.current_cover_foreground;
-        width: 320px;
-        height: 320px;
-        x: 352px;
-        y: 172px;
+        width: 320px * Data.window_x_ratio;
+        height: 320px * Data.window_x_ratio;
+        x: 352px * Data.window_x_ratio;
+        y: 172px * Data.window_y_ratio;
     }
 
     Rectangle {
         background: black;
         opacity: 0.3;
         height: 3px;
-        width: 600px;
-        x: 213px;
-        y: 541px;
+        width: 600px * Data.window_x_ratio;
+        x: 213px * Data.window_x_ratio;
+        y: 541px * Data.window_y_ratio;
     }
     Rectangle {
         background: white;
         height: 5px;
-        width: 600px * Data.current_duration_percentage * 100;
-        x: 212px;
-        y: 540px;
+        width: 600px * Data.current_duration_percentage * 100 * Data.window_x_ratio;
+        x: 212px * Data.window_x_ratio;
+        y: 540px * Data.window_y_ratio;
     }
 
     TextShadow {
@@ -111,8 +117,8 @@ component Player {
         font-size: 14px;
         horizontal-alignment: center;
         vertical-alignment: center;
-        x: 150px;
-        y: 532px;
+        x: 150px * Data.window_x_ratio;
+        y: 532px * Data.window_y_ratio;
         width: 62px;
     }
 
@@ -122,8 +128,8 @@ component Player {
         font-size: 14px;
         horizontal-alignment: center;
         vertical-alignment: center;
-        x: 837px;
-        y: 532px;
+        x: 837px * Data.window_x_ratio;
+        y: 532px * Data.window_y_ratio;
         width: 62px;
     }
 }
@@ -136,12 +142,12 @@ component Session {
             text: "Hello in Woodaudio player!";
             font-family: "Noto Sans Condensed";
             font-weight: 800;
-            font-size: 48px;
+            font-size: 48px * Data.window_x_ratio;
         }
         Text {
             text: "Login to Tidal via: \{Data.session_code}";
             font-family: "Noto Sans Condensed";
-            font-size: 32px;
+            font-size: 32px * Data.window_x_ratio;
         }
         Image {
             source: Data.session_qrcode;
@@ -155,9 +161,9 @@ component Loading {
     TextShadow {
         text: "Loading...";
         is-bold: true;
-        font-size: 48px;
-        x: 32px;
-        y: 24px;
+        font-size: 48px * Data.window_x_ratio;
+        x: 32px * Data.window_x_ratio;
+        y: 24px * Data.window_y_ratio;
     }
 }
 
@@ -165,10 +171,10 @@ export component AppWindow inherits Window {
     background: black;
 
     Image {
-        width: 1024px;
-        height: 1024px;
+        width: 1024px * Data.window_x_ratio;
+        height: 1024px * Data.window_x_ratio;
         x: 0;
-        y: -212px;
+        y: -212px * Data.window_y_ratio;
         horizontal-alignment: center;
         source: Data.current_cover_background;
     }
@@ -179,7 +185,7 @@ export component AppWindow inherits Window {
         y: 0;
     }
     SwipeGestureHandler {
-        handle-swipe-right: true;
+        handle-swipe-left: true;
         swiped => {
             Data.request_next_track();
         }

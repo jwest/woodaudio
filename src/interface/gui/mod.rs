@@ -3,12 +3,13 @@ use image::Rgb;
 use image::io::Reader;
 use qrcode::QrCode;
 use slint::{Image, LogicalSize, Rgb8Pixel, SharedPixelBuffer, WindowSize};
-
+use crate::config::Config;
 use crate::state::{BackendState, Command, PlayerBus, PlayerStateCase};
 
 slint::include_modules!();
 
 pub struct Gui {
+    config: Config,
     player_bus: PlayerBus,
     ui: AppWindow,
 }
@@ -20,12 +21,13 @@ fn duration_formated(duration: &Duration) -> String {
 }
 
 impl Gui {
-    pub fn init(player_bus: PlayerBus) -> Gui {
+    pub fn init(config: Config, player_bus: PlayerBus) -> Gui {
         let ui = AppWindow::new().unwrap();
-        Self { player_bus, ui }
+        Self { config, player_bus, ui }
     }
     pub fn gui_loop(&mut self) {
-        self.ui.window().set_size(WindowSize::Logical(LogicalSize::new(1024.0, 600.0)));
+        let gui_config = self.config.gui.clone();
+        self.ui.window().set_size(WindowSize::Logical(LogicalSize::new(gui_config.window_x as f32, gui_config.window_y as f32)));
 
         let main_window_weak = self.ui.as_weak();
         let bus = self.player_bus.clone();
@@ -54,6 +56,8 @@ impl Gui {
             let current_duration = &current_state.player.playing_time.unwrap_or(Duration::ZERO);
 
             if let Some(handle) = main_window_weak.upgrade() {
+                handle.global::<Data>().set_window_x(gui_config.window_x as i32);
+                handle.global::<Data>().set_window_y(gui_config.window_y as i32);
                 handle.global::<Data>().set_is_loading(is_loading);
 
                 handle.global::<Data>().set_current_track_name(current_track_name.into());

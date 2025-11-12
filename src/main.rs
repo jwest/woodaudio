@@ -60,8 +60,8 @@ fn player_module(playlist: Playlist, player_bus: PlayerBus) -> JoinHandle<()> {
     }).unwrap()
 }
 
-fn gui_module(player_bus: PlayerBus) {
-    Gui::init(player_bus.clone())
+fn gui_module(config: Config, player_bus: PlayerBus) {
+    Gui::init(config, player_bus.clone())
         .gui_loop()
 }
 
@@ -84,7 +84,7 @@ fn main() {
     let player = player_module(playlist.clone(), player_bus.clone());
 
     if config.gui.enabled {
-        gui_module(player_bus.clone());
+        gui_module(config.clone(), player_bus.clone());
     } else {
         let _ = player.join();
     }

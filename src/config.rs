@@ -6,7 +6,8 @@ trait ParseIni {
     fn get_string(&self, name: &str) -> String;
     fn get_string_with_default(&self, name: &str, default: &str) -> String;
     fn get_bool(&self, name: &str) -> bool; 
-    fn get_bool_with_default(&self, name: &str, default: bool) -> bool;   
+    fn get_bool_with_default(&self, name: &str, default: bool) -> bool;
+    fn get_u16_with_default(&self, name: &str, default: u16) -> u16;
 }
 
 impl ParseIni for Option<&Properties> {
@@ -25,6 +26,11 @@ impl ParseIni for Option<&Properties> {
             "false" => false,
             _ => default,
         }
+    }
+    fn get_u16_with_default(&self, name: &str, default: u16) -> u16 {
+        self.map(|properties| properties.get(name)).flatten()
+            .map(|val| val.parse::<u16>().unwrap_or(default))
+            .unwrap_or(default)
     }
 }
 
@@ -83,6 +89,8 @@ impl Player {
 #[derive(Clone)]
 pub struct Gui {
     pub enabled: bool,
+    pub window_x: u16,
+    pub window_y: u16,
     pub display_cover_background: bool,
     pub display_cover_foreground: bool,
 }
@@ -92,6 +100,8 @@ impl Gui {
         let properties = conf.section(Some("GUI"));
         Self {
             enabled: properties.get_bool_with_default("enabled", true),
+            window_x: properties.get_u16_with_default("window_x", 1024),
+            window_y: properties.get_u16_with_default("window_y", 600),
             display_cover_background: properties.get_bool_with_default("display_cover_background", true),
             display_cover_foreground: properties.get_bool_with_default("display_cover_foreground", true),
         }
@@ -99,6 +109,8 @@ impl Gui {
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("GUI"))
             .set("enabled", bool_to_string(self.enabled))
+            .set("window_x", self.window_x.to_string())
+            .set("window_y", self.window_y.to_string())
             .set("display_cover_background", bool_to_string(self.display_cover_background))
             .set("display_cover_foreground", bool_to_string(self.display_cover_foreground));
     }
