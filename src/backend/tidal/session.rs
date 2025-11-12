@@ -9,7 +9,7 @@ use std::time::Duration;
 use std::thread;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 
 use crate::config::{Config, Tidal};
 use crate::state::{Message, PlayerBus};
@@ -141,9 +141,10 @@ impl Session {
         }
 
         let device_auth = Session::login_link().unwrap();
+
         player_bus.publish_message(Message::TidalBackendLoginLinkCreated(device_auth.clone().format_url()));
 
-        return match device_auth.wait_for_link(config) {
+        match device_auth.wait_for_link(config) {
             Ok(session) => {
                 player_bus.publish_message(Message::TidalBackendInitialized);
                 session
@@ -160,9 +161,15 @@ impl Session {
             .build()?;
         let res = client.post("https://auth.tidal.com:443/v1/oauth2/device_authorization")
             .form(&[("client_id", client_id().as_str()), ("scope", "r_usr+w_usr+w_sub")])
-            .send()?;
+            .send();
 
-        let device_auth_response = res.json::<DeviceAuthorization>()?;
+        let device_auth_response = if res.is_ok() {
+            res?.json::<DeviceAuthorization>()?
+        } else {
+            warn!("[Session] waiting for login link, next try...");
+            thread::sleep(Duration::from_secs(1));
+            Self::login_link()?
+        };
         info!("[Session] login link: {}, waiting...", device_auth_response.format_url());
 
         Ok(device_auth_response)
@@ -206,7 +213,7 @@ impl Session {
         let res = client.get("https://api.tidal.com/v1/sessions").send()?;
 
         let session = res.json::<ResponseTidalSession>()?;
-        return Ok(session)
+        Ok(session)
     }
     fn refresh_token(config: &mut Config) -> Result<(), Box<dyn Error>> {
         let client = reqwest::blocking::Client::builder()
@@ -229,10 +236,13 @@ impl Session {
 
         Ok(())
     }
-    fn check_internet_connection() -> bool {
-        info!("Wait for internet connection to tidal... ");
+    fn check_internet_connection() {
         let res = reqwest::blocking::Client::default().get("https://api.tidal.com/").send();
-        res.is_ok()
+        if res.is_err() {
+            warn!("Wait for internet connection to tidal, next try... ");
+            thread::sleep(Duration::from_secs(2));
+            Self::check_internet_connection()
+        }
     }
     fn build_client(&self) -> Client {
         let mut headers = header::HeaderMap::new();
