@@ -17,12 +17,12 @@ impl Gpio {
 
     pub fn wait(&self) -> Result<(), Box<dyn Error>> {
         let gpio = rppal::gpio::Gpio::new()?;
-        let mut next_song_pin = gpio.get(self.config.gpio.next_song_pin.try_into()?)?.into_input_pulldown();
-        let mut like_song_pin = gpio.get(self.config.gpio.like_song_pin.try_into()?)?.into_input_pulldown();
+        let mut next_song_pin = gpio.get(self.config.gpio.next_song_pin.try_into()?)?.into_input_pullup();
+        let mut like_song_pin = gpio.get(self.config.gpio.like_song_pin.try_into()?)?.into_input_pullup();
 
         let player_bus_next_song = self.player_bus.clone();
         let player_bus_like_song = self.player_bus.clone();
-        
+
         next_song_pin.set_async_interrupt(
             Trigger::FallingEdge,
             Some(Duration::from_millis(50)),
