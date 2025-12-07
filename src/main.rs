@@ -3,6 +3,7 @@ use env_logger::Target;
 use interface::gui::Gui;
 
 use log::error;
+use rppal::gpio::Gpio;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::thread::{self, JoinHandle};
 
@@ -63,6 +64,11 @@ fn player_module(playlist: Playlist, player_bus: PlayerBus) -> JoinHandle<()> {
 fn gui_module(config: Config, player_bus: PlayerBus) {
     Gui::init(config, player_bus.clone())
         .gui_loop()
+}
+
+fn gpio_module(config: Config, player_bus: PlayerBus) {
+    Gpio::init(config, player_bus.clone())
+        .wait()
 }
 
 fn main() {

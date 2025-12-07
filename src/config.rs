@@ -118,6 +118,31 @@ impl Gui {
 
 #[derive(Debug)]
 #[derive(Clone)]
+pub struct Gpio {
+    pub enabled: bool,
+    pub next_song_pin: u16,
+    pub like_song_pin: u16,
+}
+
+impl Gpio {
+    fn init(conf: &Ini) -> Self {
+        let properties = conf.section(Some("GPIO"));
+        Self {
+            enabled: properties.get_bool_with_default("enabled", true),
+            next_song_pin: properties.get_u16_with_default("next_song_pin", 12),
+            like_song_pin: properties.get_u16_with_default("like_song_pin", 16),
+        }
+    }
+    fn prepare_to_save(&self, ini: &mut Ini) {
+        ini.with_section(Some("GPIO"))
+            .set("enabled", bool_to_string(self.enabled))
+            .set("next_song_pin", self.next_song_pin)
+            .set("like_song_pin", self.like_song_pin);
+    }
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct ExporterFTP {
     pub enabled: bool,
     pub server: String,
@@ -179,6 +204,8 @@ pub struct Config {
     pub tidal: Tidal,
     pub player: Player,
     pub gui: Gui,
+    pub gpio: Gpio,
+    pub gpio: Gpio,
     pub exporter_file: ExporterFile,
     pub exporter_ftp: ExporterFTP,
 }
@@ -196,6 +223,7 @@ impl Config {
             tidal: Tidal::init(&conf),
             player: Player::init(&conf),
             gui: Gui::init(&conf),
+            gpio: Gpio::init(&conf),
             exporter_file: ExporterFile::init(&conf),
             exporter_ftp: ExporterFTP::init(&conf),
         }
@@ -205,6 +233,7 @@ impl Config {
         self.tidal.prepare_to_save(&mut conf);
         self.player.prepare_to_save(&mut conf);
         self.gui.prepare_to_save(&mut conf);
+        self.gpio.prepare_to_save(&mut conf);
         self.exporter_file.prepare_to_save(&mut conf);
         self.exporter_ftp.prepare_to_save(&mut conf);
         conf.write_to_file(self.path.clone()).unwrap();

@@ -25,6 +25,7 @@ suppaftp = "6.0.1"
 secular = { version= "1.0.1", features=["bmp","normalization"] }
 base64 = "0.22.1"
 slint = { version = "1.12.1", features = ["backend-linuxkms-noseat"]}
+rppal = "0.22.1"
 
 [build-dependencies]
 slint-build = "1.12.1"
