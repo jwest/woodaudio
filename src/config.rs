@@ -136,8 +136,8 @@ impl Gpio {
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("GPIO"))
             .set("enabled", bool_to_string(self.enabled))
-            .set("next_song_pin", self.next_song_pin)
-            .set("like_song_pin", self.like_song_pin);
+            .set("next_song_pin", self.next_song_pin.to_string())
+            .set("like_song_pin", self.like_song_pin.to_string());
     }
 }
 
@@ -204,7 +204,6 @@ pub struct Config {
     pub tidal: Tidal,
     pub player: Player,
     pub gui: Gui,
-    pub gpio: Gpio,
     pub gpio: Gpio,
     pub exporter_file: ExporterFile,
     pub exporter_ftp: ExporterFTP,

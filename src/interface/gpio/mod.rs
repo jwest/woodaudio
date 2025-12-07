@@ -1,8 +1,9 @@
 use std::{thread, time::Duration};
-
+use std::error::Error;
 use log::info;
-
+use rppal::gpio::Trigger;
 use crate::{config::{self, Config}, state::PlayerBus};
+use crate::state::Message;
 
 pub struct Gpio {
     config: Config,
@@ -11,20 +12,20 @@ pub struct Gpio {
 
 impl Gpio {
     pub fn new(config: Config, player_bus: PlayerBus) -> Self {
-        Gpio { config, player_bus }
+        Self { config, player_bus }
     }
 
-    pub fn wait(&self) {
+    pub fn wait(&self) -> Result<(), Box<dyn Error>> {
         let gpio = rppal::gpio::Gpio::new()?;
-        let mut next_song_pin = gpio.get(self.config.gpio.next_song_pin)?.into_input_pulldown();
-        let mut like_song_pin = gpio.get(self.config.gpio.like_song_pin)?.into_input_pulldown();
+        let mut next_song_pin = gpio.get(self.config.gpio.next_song_pin.try_into()?)?.into_input_pulldown();
+        let mut like_song_pin = gpio.get(self.config.gpio.like_song_pin.try_into()?)?.into_input_pulldown();
         
         next_song_pin.set_async_interrupt(
             Trigger::FallingEdge,
             Some(Duration::from_millis(50)),
             move |event| {
                 info!("Next song button pressed, event = {:?}", event);
-                self.player_bus.publish_command(crate::state::Command::Next);
+                self.player_bus.publish_message(Message::UserPlayNext);
             },
         )?;
 
@@ -32,10 +33,14 @@ impl Gpio {
             Trigger::FallingEdge,
             Some(Duration::from_millis(50)),
             move |event| {
-                info!("Next song button pressed, event = {:?}", event);
-                self.player_bus.publish_command(crate::state::Command::Like(()));
-                self.player_bus.publish_command(crate::state::Command::Radio(()));
+                info!("Like song button pressed, event = {:?}", event);
+                self.player_bus.publish_message(Message::UserLike);
             },
         )?;
+
+        loop {
+            info!("GPIO waiting for signal");
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 }

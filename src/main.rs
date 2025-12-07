@@ -3,7 +3,6 @@ use env_logger::Target;
 use interface::gui::Gui;
 
 use log::error;
-use rppal::gpio::Gpio;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::thread::{self, JoinHandle};
 
@@ -22,6 +21,7 @@ mod player;
 mod interface;
 
 use interface::http;
+use crate::interface::gpio::Gpio;
 
 fn service_module(backend_init: BackendInitialization, playlist: Playlist) {
     thread::spawn(move || {
@@ -67,8 +67,12 @@ fn gui_module(config: Config, player_bus: PlayerBus) {
 }
 
 fn gpio_module(config: Config, player_bus: PlayerBus) {
-    Gpio::init(config, player_bus.clone())
-        .wait()
+    thread::Builder::new()
+        .name("GPIO module".to_owned())
+        .spawn_with_priority(ThreadPriority::Min, move |_| {
+            Gpio::new(config, player_bus.clone())
+                .wait().expect("Gpio module error");
+        }).unwrap();
 }
 
 fn main() {
@@ -86,6 +90,7 @@ fn main() {
     service_module(backend_init.clone(), playlist.clone());
     downloader_module(playlist.clone(), backend_init.clone());
     server_module(player_bus.clone());
+    gpio_module(config.clone(), player_bus.clone());
 
     let player = player_module(playlist.clone(), player_bus.clone());
 
