@@ -19,13 +19,16 @@ impl Gpio {
         let gpio = rppal::gpio::Gpio::new()?;
         let mut next_song_pin = gpio.get(self.config.gpio.next_song_pin.try_into()?)?.into_input_pulldown();
         let mut like_song_pin = gpio.get(self.config.gpio.like_song_pin.try_into()?)?.into_input_pulldown();
+
+        let player_bus_next_song = self.player_bus.clone();
+        let player_bus_like_song = self.player_bus.clone();
         
         next_song_pin.set_async_interrupt(
             Trigger::FallingEdge,
             Some(Duration::from_millis(50)),
             move |event| {
                 info!("Next song button pressed, event = {:?}", event);
-                self.player_bus.publish_message(Message::UserPlayNext);
+                player_bus_next_song.publish_message(Message::UserPlayNext);
             },
         )?;
 
@@ -34,7 +37,7 @@ impl Gpio {
             Some(Duration::from_millis(50)),
             move |event| {
                 info!("Like song button pressed, event = {:?}", event);
-                self.player_bus.publish_message(Message::UserLike);
+                player_bus_like_song.publish_message(Message::UserLike);
             },
         )?;
 
