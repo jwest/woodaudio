@@ -1,110 +1,155 @@
-use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::Path;
+use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
-use log::{error, info};
+use log::{error, info, warn};
 
 use crate::playlist::BufferedTrack;
 use super::Player;
 use super::symphonia_decoder;
 
 pub struct SnapcastPlayer {
-    pipe_path: String,
+    host: String,
+    port: u16,
+    stream: Arc<Mutex<Option<TcpStream>>>,
     empty: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     stopped: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
 }
 
 impl SnapcastPlayer {
-    pub fn new(pipe_path: &str) -> Self {
-        let path = Path::new(pipe_path);
-        if !path.exists() {
-            info!("[SnapcastPlayer] Creating FIFO at {}", pipe_path);
-            unsafe {
-                let c_path = std::ffi::CString::new(pipe_path).unwrap();
-                libc::mkfifo(c_path.as_ptr(), 0o644);
-            }
-        }
+    pub fn new(host: &str, port: u16) -> Self {
+        let stream = Self::connect(host, port);
 
         Self {
-            pipe_path: pipe_path.to_string(),
+            host: host.to_string(),
+            port,
+            stream: Arc::new(Mutex::new(Some(stream))),
             empty: Arc::new(AtomicBool::new(true)),
             paused: Arc::new(AtomicBool::new(false)),
             stopped: Arc::new(AtomicBool::new(false)),
+            worker: None,
         }
     }
-}
 
-fn write_pcm_to_pipe(pipe_path: &str, samples: &[i16], paused: &AtomicBool, stopped: &AtomicBool) -> Result<(), String> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .open(pipe_path)
-        .map_err(|e| format!("Failed to open FIFO {}: {:?}", pipe_path, e))?;
+    fn connect(host: &str, port: u16) -> TcpStream {
+        let addr = format!("{}:{}", host, port);
+        info!("[SnapcastPlayer] Connecting to snapcast TCP at {} ...", addr);
 
-    let byte_slice = unsafe {
-        std::slice::from_raw_parts(
-            samples.as_ptr() as *const u8,
-            samples.len() * 2,
-        )
-    };
-
-    // Write in chunks to allow checking paused/stopped between writes
-    let chunk_size = 8192;
-    for chunk in byte_slice.chunks(chunk_size) {
-        if stopped.load(Ordering::SeqCst) {
-            return Ok(());
+        loop {
+            match TcpStream::connect(&addr) {
+                Ok(s) => {
+                    s.set_nodelay(true).unwrap_or_else(|e| warn!("[SnapcastPlayer] Failed to set TCP_NODELAY: {:?}", e));
+                    info!("[SnapcastPlayer] Connected to snapcast TCP at {}", addr);
+                    return s;
+                }
+                Err(e) => {
+                    error!("[SnapcastPlayer] Failed to connect to {}, retrying in 3s... ({:?})", addr, e);
+                    thread::sleep(Duration::from_secs(3));
+                }
+            }
         }
-
-        while paused.load(Ordering::SeqCst) && !stopped.load(Ordering::SeqCst) {
-            thread::sleep(std::time::Duration::from_millis(50));
-        }
-
-        if stopped.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-
-        file.write_all(chunk)
-            .map_err(|e| format!("Failed to write to FIFO: {:?}", e))?;
     }
 
-    Ok(())
+    fn stop_and_wait(&mut self) {
+        self.stopped.store(true, Ordering::SeqCst);
+
+        // Shutdown the TCP stream to unblock any write_all in the worker thread
+        if let Some(stream) = self.stream.lock().unwrap().take() {
+            let _ = stream.shutdown(Shutdown::Write);
+        }
+
+        if let Some(handle) = self.worker.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 impl Player for SnapcastPlayer {
     fn play_track(&mut self, track: BufferedTrack) -> bool {
-        self.stopped.store(false, Ordering::SeqCst);
-        self.paused.store(false, Ordering::SeqCst);
-
-        let decoded = match symphonia_decoder::decode(track.stream) {
-            Ok(decoded) => {
-                info!("[SnapcastPlayer] Decoded track: {} samples, {}Hz, {}ch",
-                    decoded.samples.len(), decoded.sample_rate, decoded.channels);
-                decoded
+        match &self.worker {
+            Some(handle) if !handle.is_finished() => {
+                self.stop_and_wait();
             },
-            Err(e) => {
-                error!("[SnapcastPlayer] Decode error: {}", e);
-                return false;
-            }
+            Some(_) => {
+                self.worker.take();
+            },
+            None => {},
         };
 
+        // Reconnect if stream was closed (after stop or shutdown)
+        if self.stream.lock().unwrap().is_none() {
+            let new_stream = Self::connect(&self.host, self.port);
+            *self.stream.lock().unwrap() = Some(new_stream);
+        }
+
+        self.stopped.store(false, Ordering::SeqCst);
+        self.paused.store(false, Ordering::SeqCst);
         self.empty.store(false, Ordering::SeqCst);
 
         let empty = Arc::clone(&self.empty);
         let paused = Arc::clone(&self.paused);
         let stopped = Arc::clone(&self.stopped);
-        let pipe_path = self.pipe_path.clone();
+        let stream = Arc::clone(&self.stream);
 
-        thread::spawn(move || {
-            match write_pcm_to_pipe(&pipe_path, &decoded.samples, &paused, &stopped) {
-                Ok(_) => info!("[SnapcastPlayer] Track written to pipe successfully"),
-                Err(e) => error!("[SnapcastPlayer] Write error: {}", e),
+        let handle = thread::spawn(move || {
+            info!("[SnapcastPlayer] Starting decode_streaming...");
+            let mut total_bytes: usize = 0;
+
+            let result = symphonia_decoder::decode_streaming(track.stream, |samples| {
+                if stopped.load(Ordering::SeqCst) {
+                    return false;
+                }
+
+                while paused.load(Ordering::SeqCst) && !stopped.load(Ordering::SeqCst) {
+                    thread::sleep(Duration::from_millis(50));
+                }
+
+                if stopped.load(Ordering::SeqCst) {
+                    return false;
+                }
+
+                let byte_slice = unsafe {
+                    std::slice::from_raw_parts(
+                        samples.as_ptr() as *const u8,
+                        samples.len() * 2,
+                    )
+                };
+
+                let mut guard = stream.lock().unwrap();
+                let tcp = match guard.as_mut() {
+                    Some(tcp) => tcp,
+                    None => return false,
+                };
+
+                match tcp.write_all(byte_slice) {
+                    Ok(_) => {
+                        total_bytes += byte_slice.len();
+                        if total_bytes % (1024 * 1024) < byte_slice.len() {
+                            info!("[SnapcastPlayer] Written {} MB so far", total_bytes / (1024 * 1024));
+                        }
+                        true
+                    },
+                    Err(e) => {
+                        error!("[SnapcastPlayer] Write error: {:?}", e);
+                        false
+                    }
+                }
+            });
+
+            match result {
+                Ok(info) => info!("[SnapcastPlayer] Track finished, {}Hz {}ch, total {} bytes", info.sample_rate, info.channels, total_bytes),
+                Err(e) => error!("[SnapcastPlayer] Decode error: {}", e),
             }
+
             empty.store(true, Ordering::SeqCst);
         });
 
+        self.worker = Some(handle);
         true
     }
 
@@ -117,7 +162,7 @@ impl Player for SnapcastPlayer {
     }
 
     fn stop(&mut self) {
-        self.stopped.store(true, Ordering::SeqCst);
+        self.stop_and_wait();
         self.empty.store(true, Ordering::SeqCst);
     }
 

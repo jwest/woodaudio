@@ -7,13 +7,15 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-pub struct DecodedAudio {
-    pub samples: Vec<i16>,
+pub struct AudioInfo {
     pub sample_rate: u32,
     pub channels: u16,
 }
 
-pub fn decode(data: bytes::Bytes) -> Result<DecodedAudio, String> {
+pub fn decode_streaming<F>(data: bytes::Bytes, mut on_packet: F) -> Result<AudioInfo, String>
+where
+    F: FnMut(&[i16]) -> bool,
+{
     let cursor = Cursor::new(data);
     let mss = MediaSourceStream::new(Box::new(cursor), Default::default());
 
@@ -40,8 +42,6 @@ pub fn decode(data: bytes::Bytes) -> Result<DecodedAudio, String> {
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &decoder_opts)
         .map_err(|e| format!("Codec error: {:?}", e))?;
-
-    let mut all_samples: Vec<i16> = Vec::new();
 
     loop {
         let packet = match format.next_packet() {
@@ -70,14 +70,12 @@ pub fn decode(data: bytes::Bytes) -> Result<DecodedAudio, String> {
         let num_frames = decoded.frames();
         let mut sample_buf = SampleBuffer::<i16>::new(num_frames as u64, spec);
         sample_buf.copy_interleaved_ref(decoded);
-        all_samples.extend_from_slice(sample_buf.samples());
+
+        if !on_packet(sample_buf.samples()) {
+            debug!("[SymphoniaDecoder] Streaming stopped by callback");
+            break;
+        }
     }
 
-    debug!("[SymphoniaDecoder] Decoded {} samples total", all_samples.len());
-
-    Ok(DecodedAudio {
-        samples: all_samples,
-        sample_rate,
-        channels,
-    })
+    Ok(AudioInfo { sample_rate, channels })
 }
