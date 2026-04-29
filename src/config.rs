@@ -2,6 +2,9 @@ use std::path::PathBuf;
 
 use ini::{Ini, Properties};
 
+const TIDAL_CLIENT_ID: &str = "4N3n6Q1x95LL5K7p";
+const TIDAL_CLIENT_SECRET: &str = "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik";
+
 trait ParseIni {
     fn get_string(&self, name: &str) -> String;
     fn get_string_with_default(&self, name: &str, default: &str) -> String;
@@ -41,6 +44,8 @@ fn bool_to_string(value: bool) -> String {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct Tidal {
+    pub client_id: String,
+    pub client_secret: String,
     pub token_type: String,
     pub access_token: String,
     pub refresh_token: String,
@@ -51,6 +56,8 @@ impl Tidal {
     fn init(conf: &Ini) -> Self {
         let properties = conf.section(Some("Tidal"));
         Self {
+            client_id: properties.get_string_with_default("client_id", TIDAL_CLIENT_ID),
+            client_secret: properties.get_string_with_default("client_secret", TIDAL_CLIENT_SECRET),
             token_type: properties.get_string_with_default("token_type", "Bearer"),
             access_token: properties.get_string("access_token"),
             refresh_token: properties.get_string("refresh_token"),
@@ -59,6 +66,8 @@ impl Tidal {
     }
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("Tidal"))
+            .set("client_id", self.client_id.clone())
+            .set("client_secret", self.client_secret.clone())
             .set("token_type", self.token_type.clone())
             .set("access_token", self.access_token.clone())
             .set("refresh_token", self.refresh_token.clone())
