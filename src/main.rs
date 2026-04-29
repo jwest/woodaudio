@@ -52,11 +52,11 @@ fn server_module(player_bus: PlayerBus) {
     }).unwrap();
 }
 
-fn player_module(playlist: Playlist, player_bus: PlayerBus) -> JoinHandle<()> {
+fn player_module(config: Config, playlist: Playlist, player_bus: PlayerBus) -> JoinHandle<()> {
     thread::Builder::new()
         .name("Player module".to_owned())
         .spawn_with_priority(ThreadPriority::Max, move |_| {
-            player::player(&playlist, player_bus);
+            player::player(&config, &playlist, player_bus);
     }).unwrap()
 }
 
@@ -81,7 +81,7 @@ fn main() {
     downloader_module(playlist.clone(), backend_init.clone());
     server_module(player_bus.clone());
 
-    let player = player_module(playlist.clone(), player_bus.clone());
+    let player = player_module(config.clone(), playlist.clone(), player_bus.clone());
 
     if config.gui.enabled {
         gui_module(config.clone(), player_bus.clone());

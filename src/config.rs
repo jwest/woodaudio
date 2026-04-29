@@ -79,6 +79,8 @@ impl Tidal {
 #[derive(Clone)]
 pub struct Player {
     pub without_cold_start: bool,
+    pub output: String,
+    pub snapcast_pipe: String,
 }
 
 impl Player {
@@ -86,11 +88,15 @@ impl Player {
         let properties = conf.section(Some("Player"));
         Self {
             without_cold_start: properties.get_bool_with_default("without_cold_start", false),
+            output: properties.get_string_with_default("output", "rodio"),
+            snapcast_pipe: properties.get_string_with_default("snapcast_pipe", "/tmp/snapfifo"),
         }
     }
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("Player"))
-            .set("without_cold_start", bool_to_string(self.without_cold_start));
+            .set("without_cold_start", bool_to_string(self.without_cold_start))
+            .set("output", self.output.clone())
+            .set("snapcast_pipe", self.snapcast_pipe.clone());
     }
 }
 
