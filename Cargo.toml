@@ -8,6 +8,8 @@ reqwest = { version = "0.12.5", features = ["blocking", "json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rodio = "0.19.0"
+symphonia = { version = "0.5", features = ["flac", "mp3", "aac", "pcm", "isomp4"] }
+libc = "0.2"
 metaflac = "0.2.7"
 rand = "0.8.5"
 crossbeam-channel = "0.5.8"
@@ -23,7 +25,6 @@ tempfile = "3.10.1"
 thread-priority = "1.1.0"
 suppaftp = "6.0.1"
 secular = { version= "1.0.1", features=["bmp","normalization"] }
-base64 = "0.22.1"
 slint = { version = "1.12.1", features = ["backend-linuxkms-noseat"]}
 rppal = "0.22.1"
 

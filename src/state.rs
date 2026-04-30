@@ -253,7 +253,7 @@ impl Broadcast {
         for channel in self.channels.lock().unwrap().iter() {
             if channel.commands.contains(&command.as_string()) {
                 channel.send(command.clone());
-                info!("[PlayerBus] broadcast event sended, command: {:?}, channel: {:?}", command, channel);
+                //info!("[PlayerBus] broadcast event sended, command: {:?}, channel: {:?}", command, channel);
             }
         }
     }
