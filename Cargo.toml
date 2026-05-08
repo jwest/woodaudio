@@ -3,6 +3,11 @@ name = "woodaudio-player"
 version = "0.5.0"
 edition = "2021"
 
+[features]
+default = []
+gpio = ["dep:rppal"]
+gui = ["dep:slint", "dep:slint-build", "dep:qrcode"]
+
 [dependencies]
 reqwest = { version = "0.12.5", features = ["blocking", "json"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -20,13 +25,13 @@ home = "0.5.5"
 bytes = "1"
 tiny_http = "0.12.0"
 image = "0.25"
-qrcode = "0.14.1"
+qrcode = { version = "0.14.1", optional = true }
 tempfile = "3.10.1"
 thread-priority = "1.1.0"
 suppaftp = "6.0.1"
 secular = { version= "1.0.1", features=["bmp","normalization"] }
-slint = { version = "1.12.1", features = ["backend-linuxkms-noseat"]}
-rppal = "0.22.1"
+slint = { version = "1.12.1", features = ["backend-linuxkms-noseat"], optional = true }
+rppal = { version = "0.22.1", optional = true }
 
 [build-dependencies]
-slint-build = "1.12.1"
+slint-build = { version = "1.12.1", optional = true }

@@ -1,6 +1,5 @@
 use backend::BackendInitialization;
 use env_logger::Target;
-use interface::gui::Gui;
 
 use log::error;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
@@ -21,6 +20,11 @@ mod player;
 mod interface;
 
 use interface::http;
+
+#[cfg(feature = "gui")]
+use interface::gui::Gui;
+
+#[cfg(feature = "gpio")]
 use crate::interface::gpio::Gpio;
 
 fn service_module(backend_init: BackendInitialization, playlist: Playlist) {
@@ -61,11 +65,13 @@ fn player_module(config: Config, playlist: Playlist, player_bus: PlayerBus) -> J
     }).unwrap()
 }
 
+#[cfg(feature = "gui")]
 fn gui_module(config: Config, player_bus: PlayerBus) {
     Gui::init(config, player_bus.clone())
         .gui_loop()
 }
 
+#[cfg(feature = "gpio")]
 fn gpio_module(config: Config, player_bus: PlayerBus) {
     thread::Builder::new()
         .name("GPIO module".to_owned())
@@ -90,13 +96,19 @@ fn main() {
     service_module(backend_init.clone(), playlist.clone());
     downloader_module(playlist.clone(), backend_init.clone());
     server_module(player_bus.clone());
+
+    #[cfg(feature = "gpio")]
     gpio_module(config.clone(), player_bus.clone());
 
     let player = player_module(config.clone(), playlist.clone(), player_bus.clone());
 
+    #[cfg(feature = "gui")]
     if config.gui.enabled {
         gui_module(config.clone(), player_bus.clone());
     } else {
         let _ = player.join();
     }
+
+    #[cfg(not(feature = "gui"))]
+    let _ = player.join();
 }
