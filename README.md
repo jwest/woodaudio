@@ -44,127 +44,148 @@ sudo systemctl restart sysfsutils
 
 ## Cross-kompilacja (budowanie na macOS → Raspberry Pi)
 
-Budowanie natywne na Raspberry Pi jest możliwe, ale bardzo wolne. Zamiast tego można skompilować woodaudio na macOS przy użyciu Dockera, uzyskując gotowy binary dla aarch64 Linux.
+Budowanie natywne na Raspberry Pi jest możliwe, ale bardzo wolne. Zamiast tego można skompilować woodaudio na macOS przy użyciu Dockera — kontener ARM64 działa natywnie na Apple Silicon (M1–M4) **bez emulacji x86**, co daje szybką kompilację i brak problemów z cross-kompilacją C-zależności.
 
 ### Wymagania
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) dla macOS (Apple Silicon)
 - Ok. 3 GB wolnego miejsca na dysku
 
-### Szybki start
+### Szybki start — jeden skrypt
 
 ```bash
-# Zbuduj obraz i skompiluj (jedna komenda)
-./build-cross.sh
+# Kompilacja (automatycznie buduje obraz Docker, jeśli brak)
+./build.sh build
 
-# Binary znajduje się w:
-# target/release/woodaudio-player
+# Binary: target/release/woodaudio-player
 ```
 
-### Komendy krok po kroku
+### Wszystkie komendy
 
-```bash
-# 1. Zbuduj obraz z toolchainem (jednorazowo)
-docker build -f Dockerfile.arm64 -t woodaudio-builder:arm64 .
+| Komenda | Opis |
+|---------|------|
+| `./build.sh build` | Kompilacja dla aarch64 (auto-build obrazu jeśli brak) |
+| `./build.sh dist` | Kompilacja + pakowanie dist/ z bibliotekami .so (dla piCore) |
+| `./build.sh image` | Budowa/przebudowa obrazu Docker |
+| `./build.sh deploy-rpios` | Kompilacja + scp binary + instalacja zależności na Raspberry Pi OS |
+| `./build.sh deploy-picore` | Kompilacja + dist + scp dist/ na piCore |
+| `./build.sh clean` | Usunięcie target/ i dist/ |
+| `./build.sh help` | Pomoc |
 
-# 2. Cross-kompilacja
-docker run --rm -v "$(pwd):/app" woodaudio-builder:arm64 \
-    cargo build --release --features gui,gpio
-
-# 3. Skopiuj na Raspberry Pi
-scp target/release/woodaudio-player pi@<ip>:~/
-```
-
-### Opcje build-cross.sh
+### Opcje
 
 ```bash
 # Użyj niestandardowych feature'ów
-./build-cross.sh --features "gui,gpio"
+./build.sh build --features "gui"
 
 # Przebuduj obraz Dockera (gdy zmienisz zależności)
-./build-cross.sh --rebuild
+./build.sh build --rebuild
 
-# Skopiuj binarkę po zbudowaniu
-./build-cross.sh --copy-dest /tmp/woodaudio
+# Kopiuj binarkę po zbudowaniu
+./build.sh build --copy-dest /tmp/woodaudio
 
-# Pomoc
-./build-cross.sh --help
+# Użyj innego obrazu
+./build.sh build --image my-custom-image:latest
 ```
 
-### Wymagane pakiety runtime na Pi
+### Predefiniowane zmienne
 
-Binary wymaga tych bibliotek na Raspberry Pi (zainstalowane przez `apt-get`:
+Wszystkie zmienne konfiguracyjne znajdują się na początku `build.sh`. Można je zmienić bezpośrednio w pliku lub ustawić jako zmienne środowiskowe:
+
+| Zmienna | Domyślna wartość | Opis |
+|---------|-----------------|------|
+| `IMAGE_NAME` | `woodaudio-builder:arm64` | Nazwa obrazu Docker |
+| `DOCKERFILE` | `Dockerfile.arm64` | Plik Dockerfile |
+| `FEATURES` | `gui,gpio` | Feature flags dla cargo |
+| `TARGET` | `aarch64-unknown-linux-gnu` | Target kompilacji |
+| `BINARY_NAME` | `woodaudio-player` | Nazwa pliku wynikowego |
+| `PI_HOST` | `192.168.1.100` | Adres IP Raspberry Pi |
+| `PI_USER` | `pi` | Użytkownik SSH na Pi |
+| `PI_DEST_RPIOS` | `/home/pi` | Ścieżka docelowa na Raspberry Pi OS |
+| `PI_DEST_PICORE` | `/opt/woodaudio` | Ścieżka docelowa na piCore |
+
+**Przykład — deploy na Pi z innym adresem:**
+
+```bash
+PI_HOST=192.168.1.42 ./build.sh deploy-rpios
+```
+
+### Deploy na Raspberry Pi OS
+
+```bash
+# Krok 1: Skonfiguruj PI_HOST w build.sh (lub zmienna środowiskowa)
+
+# Krok 2: Zbuduj i wdróż jednym poleceniem
+./build.sh deploy-rpios
+
+# Skrypt automatycznie:
+#   1. Kompiluje binary
+#   2. Kopiuje go na Pi przez scp
+#   3. Instaluje zależności runtime przez apt
+```
+
+Binary wymaga tych bibliotek runtime na Pi:
 
 ```bash
 sudo apt-get install libdrm2 libgbm1 libinput10 libudev1 \
                      libasound2 libxkbcommon0 libssl3
 ```
 
-Są one domyślnie dostępne w Raspberry Pi OS Bookworm (wersja 64-bit).
+Są domyślnie dostępne w Raspberry Pi OS Bookworm (64-bit).
 
-### Jak to działa
-
-`Dockerfile.arm64` bazuje na `arm64v8/ubuntu:22.04` — obrazie natywnym dla architektury ARM64. Ponieważ Docker Desktop na Apple Silicon (M1/M2/M3/M4) uruchamia maszynę wirtualną ARM64 Linux, kontener działa natywnie **bez emulacji x86**. Rust kompiluje kod dla `aarch64-unknown-linux-gnu`, który jest tożsamy z architekturą kontenera. Efekt: szybka kompilacja i brak problemów z cross-kompilacją C zależności.
-
----
-
-## Deploy na piCore (Tiny Core Linux)
+### Deploy na piCore (Tiny Core Linux)
 
 piCore to minimalistyczna dystrybucja bez menedżera pakietów apt. Zamiast instalować brakujące biblioteki pojedynczo, dostarczamy wszystkie `.so` razem z binarką.
 
-### Budowanie + eksport (macOS)
-
 ```bash
-# Krok 1: Zbuduj obraz narzędziowy (jednorazowo)
-docker build -f Dockerfile.arm64 -t woodaudio-builder:arm64 .
+# Krok 1: Skonfiguruj PI_HOST w build.sh
 
-# Krok 2: Zbuduj i wyeksportuj binary + biblioteki do katalogu dist/
-./export-dist.sh
+# Krok 2: Zbuduj, spakuj i wdróż jednym poleceniem
+./build.sh deploy-picore
+
+# Skrypt automatycznie:
+#   1. Kompiluje binary
+#   2. Zbiera wszystkie wymagane .so do dist/libs/
+#   3. Tworzy skrypty uruchomieniowe (run.sh, start-woodaudio.sh)
+#   4. Kopiuje całość na Pi przez scp
 ```
 
-Katalog `dist/` zawiera:
+Katalog `dist/` (generowany przez `./build.sh dist`):
 ```
 dist/
-├── woodaudio-player      # Binary 35MB
-├── libs/                  # Wszystkie .so (biblioteki + loader)
+├── woodaudio-player      # Binary
+├── libs/                  # Biblioteki współdzielone .so
 │   ├── libgbm.so.1
 │   ├── libdrm.so.2
 │   ├── libinput.so.10
-│   ├── libasound.so.2
-│   ├── libc.so.6
-│   └── ...
+│   ├── ...
 ├── run.sh                 # Uruchomienie (LD_LIBRARY_PATH + własny linker)
 └── start-woodaudio.sh     # Skrypt startowy do autostartu
 ```
 
-### Wdrożenie na piCore
-
+**Uruchomienie na piCore:**
 ```bash
-# Na macOS: skopiuj cały katalog dist/ na Pi
-scp -r dist/* pi@<ip>:/opt/woodaudio/
-
-# Na piCore: uruchom
 /opt/woodaudio/run.sh
 ```
 
-### Autostart na piCore
-
-Dodaj do `/opt/bootlocal.sh` lub `.profile`:
-
+**Autostart** — dodaj do `/opt/bootlocal.sh` lub `.profile`:
 ```bash
 /opt/woodaudio/start-woodaudio.sh &
 ```
+
+### Jak to działa
+
+`Dockerfile.arm64` bazuje na `arm64v8/ubuntu:22.04` — obrazie natywnym dla architektury ARM64. Docker Desktop na Apple Silicon uruchamia maszynę wirtualną ARM64 Linux, więc kontener działa natywnie. Rust kompiluje kod dla `aarch64-unknown-linux-gnu`, który jest tożsamy z architekturą kontenera.
 
 ### Struktura plików
 
 | Plik | Opis |
 |------|------|
-| `Dockerfile.arm64` | Obraz Docker z toolchainem i zależnościami |
+| `build.sh` | **Główny skrypt** — kompilacja, pakowanie, deploy (all-in-one) |
+| `Dockerfile.arm64` | Obraz Docker z toolchainem (Ubuntu ARM64) |
 | `Dockerfile.aarch64` | (Opcjonalny) obraz dla `cross-rs` na hoście x86_64 Linux |
 | `Cross.toml` | Konfiguracja dla narzędzia `cross` |
 | `.cargo/config.toml` | Ustawienia linkera dla targetu aarch64 |
-| `build-cross.sh` | Skrypt do budowania binarki (bez eksportu libs) |
-| `export-dist.sh` | Skrypt do budowania + eksportu dist/ (z libs) |
-| `dist/` | Katalog z gotowym do wdrożenia zestawem (generowany) |
+| `dist/` | Katalog z gotowym do wdrożenia zestawem (generowany przez `build.sh dist`) |
 | `dist/run.sh` | Wrapper uruchamiający z własnym `LD_LIBRARY_PATH` |
 | `dist/start-woodaudio.sh` | Skrypt startowy do autostartu |
