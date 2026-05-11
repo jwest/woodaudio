@@ -98,12 +98,8 @@ do_build() {
     fi
 
     echo "==> Kompilacja ${BINARY_NAME} dla aarch64 (features: ${features})..."
-    PLATFORM_ARGS=()
-    if [ -n "$PLATFORM" ]; then
-        PLATFORM_ARGS=(--platform "$PLATFORM")
-    fi
 
-    docker run --rm "${PLATFORM_ARGS[@]}" \
+    docker run --rm ${PLATFORM:+--platform "$PLATFORM"} \
         -v "${SCRIPT_DIR}:${BUILD_DIR}" \
         "${IMAGE_NAME}" \
         cargo build --release --features "${features}"

@@ -36,10 +36,10 @@ pub fn player(config: &Config, playlist: &Playlist, mut player_bus: PlayerBus) {
                     playing_time = Some(Duration::ZERO);
                     player_bus.publish_message(Message::PlayerPlayingNewTrack(track));
 
-                    for cmd in &config.on_track_change_commands {
-                        match std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
+                    if !config.cmd_events.on_track_change.is_empty() {
+                        match std::process::Command::new("sh").arg("-c").arg(&config.cmd_events.on_track_change).spawn() {
                             Ok(_) => {},
-                            Err(e) => log::error!("[Player] Failed to execute on-track-change command '{}': {}", cmd, e),
+                            Err(e) => log::error!("[Player] Failed to execute on-track-change command '{}': {}", config.cmd_events.on_track_change, e),
                         }
                     }
                 }

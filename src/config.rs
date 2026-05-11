@@ -109,8 +109,8 @@ impl Gui {
         let properties = conf.section(Some("GUI"));
         Self {
             enabled: properties.get_bool_with_default("enabled", true),
-            window_x: properties.get_u16_with_default("window_x", 1024),
-            window_y: properties.get_u16_with_default("window_y", 600),
+            window_x: properties.get_u16_with_default("window_x", 800),
+            window_y: properties.get_u16_with_default("window_y", 480),
             display_cover_background: properties.get_bool_with_default("display_cover_background", true),
             display_cover_foreground: properties.get_bool_with_default("display_cover_foreground", true),
         }
@@ -208,6 +208,31 @@ impl ExporterFTP {
 
 #[derive(Debug)]
 #[derive(Clone)]
+pub struct CmdEvents {
+    pub on_save: String,
+    pub on_track_change: String,
+    pub on_like: String,
+}
+
+impl CmdEvents {
+    fn init(conf: &Ini) -> Self {
+        let properties = conf.section(Some("CMD_EVENTS"));
+        Self {
+            on_save: properties.get_string_with_default("on_save", "filetool.sh -b"),
+            on_track_change: properties.get_string("on_track_change"),
+            on_like: properties.get_string("on_like"),
+        }
+    }
+    fn prepare_to_save(&self, ini: &mut Ini) {
+        ini.with_section(Some("CMD_EVENTS"))
+            .set("on_save", self.on_save.clone())
+            .set("on_track_change", self.on_track_change.clone())
+            .set("on_like", self.on_like.clone());
+    }
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct Config {
     path: PathBuf,
     pub tidal: Tidal,
@@ -216,9 +241,7 @@ pub struct Config {
     pub gpio: Gpio,
     pub exporter_file: ExporterFile,
     pub exporter_ftp: ExporterFTP,
-    pub on_save_commands: Vec<String>,
-    pub on_track_change_commands: Vec<String>,
-    pub on_like_commands: Vec<String>,
+    pub cmd_events: CmdEvents,
 }
 
 impl Config {
@@ -229,28 +252,8 @@ impl Config {
     pub fn init(path: PathBuf) -> Self {
         let conf = Ini::load_from_file(path.clone()).unwrap_or_default();
 
-        let mut on_save_commands = Vec::new();
-        if let Some(properties) = conf.section(Some("OnSave")) {
-            for (_, value) in properties.iter() {
-                on_save_commands.push(value.to_string());
-            }
-        }
-
-        let mut on_track_change_commands = Vec::new();
-        if let Some(properties) = conf.section(Some("OnTrackChange")) {
-            for (_, value) in properties.iter() {
-                on_track_change_commands.push(value.to_string());
-            }
-        }
-
-        let mut on_like_commands = Vec::new();
-        if let Some(properties) = conf.section(Some("OnLike")) {
-            for (_, value) in properties.iter() {
-                on_like_commands.push(value.to_string());
-            }
-        }
-
         Self { 
+            cmd_events: CmdEvents::init(&conf),
             path,
             tidal: Tidal::init(&conf),
             player: Player::init(&conf),
@@ -258,9 +261,6 @@ impl Config {
             gpio: Gpio::init(&conf),
             exporter_file: ExporterFile::init(&conf),
             exporter_ftp: ExporterFTP::init(&conf),
-            on_save_commands,
-            on_track_change_commands,
-            on_like_commands,
         }
     }
     pub fn save(&self) {
@@ -271,21 +271,16 @@ impl Config {
         self.gpio.prepare_to_save(&mut conf);
         self.exporter_file.prepare_to_save(&mut conf);
         self.exporter_ftp.prepare_to_save(&mut conf);
-        for (i, cmd) in self.on_save_commands.iter().enumerate() {
-            conf.with_section(Some("OnSave")).set(format!("cmd_{}", i + 1), cmd.clone());
-        }
-        for (i, cmd) in self.on_track_change_commands.iter().enumerate() {
-            conf.with_section(Some("OnTrackChange")).set(format!("cmd_{}", i + 1), cmd.clone());
-        }
-        for (i, cmd) in self.on_like_commands.iter().enumerate() {
-            conf.with_section(Some("OnLike")).set(format!("cmd_{}", i + 1), cmd.clone());
+        self.cmd_events.prepare_to_save(&mut conf);
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
         }
         conf.write_to_file(self.path.clone()).unwrap();
 
-        for cmd in &self.on_save_commands {
-            match std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
+        if !self.cmd_events.on_save.is_empty() {
+            match std::process::Command::new("sh").arg("-c").arg(&self.cmd_events.on_save).spawn() {
                 Ok(_) => {},
-                Err(e) => log::error!("[Config] Failed to execute on-save command '{}': {}", cmd, e),
+                Err(e) => log::error!("[Config] Failed to execute on-save command '{}': {}", self.cmd_events.on_save, e),
             }
         }
     }

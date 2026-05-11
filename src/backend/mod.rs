@@ -157,10 +157,10 @@ impl BackendService {
                     let _ = self.tidal.add_track_to_favorites(&track_id);
                     self.playerbus.lock().unwrap().publish_message(state::Message::TrackAddedToFavorites);
 
-                    for cmd in &self.config.on_like_commands {
-                        match std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
+                    if !self.config.cmd_events.on_like.is_empty() {
+                        match std::process::Command::new("sh").arg("-c").arg(&self.config.cmd_events.on_like).spawn() {
                             Ok(_) => {},
-                            Err(e) => log::error!("[Backend] Failed to execute on-like command '{}': {}", cmd, e),
+                            Err(e) => log::error!("[Backend] Failed to execute on-like command '{}': {}", self.config.cmd_events.on_like, e),
                         }
                     }
                 },
