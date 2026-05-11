@@ -218,7 +218,7 @@ export LD_LIBRARY_PATH="${DIR}/libs"
 
 for loader in /lib/ld-linux-aarch64.so.1 /lib/ld-linux.so.3 /lib/ld-linux.so.2 /lib/ld-linux-arm64.so.1; do
     if [ -f "$loader" ]; then
-        exec "$loader" "${DIR}/woodaudio-player" "$@"
+        exec "$loader" "${DIR}/woodaudio-player" "$@" >> /var/log/woodaudio.log 2>&1
     fi
 done
 
