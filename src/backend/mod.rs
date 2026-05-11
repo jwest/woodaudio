@@ -62,6 +62,7 @@ impl BackendInitialization {
 
 #[derive(Clone)]
 pub struct BackendService {
+    config: Config,
     tidal: TidalBackend,
     downloader: Downloader,
     playerbus: Arc<Mutex<PlayerBus>>,
@@ -73,6 +74,7 @@ pub struct BackendService {
 impl BackendService {
     fn init(config: &Config, tidal: TidalBackend, playerbus: PlayerBus) -> Self {
         Self { 
+            config: config.clone(),
             tidal: tidal.clone(),
             playerbus: Arc::new(Mutex::new(playerbus)),
             downloader: Downloader::init(config, tidal),
@@ -154,6 +156,13 @@ impl BackendService {
                 Some(state::Command::Like(track_id)) => {
                     let _ = self.tidal.add_track_to_favorites(&track_id);
                     self.playerbus.lock().unwrap().publish_message(state::Message::TrackAddedToFavorites);
+
+                    for cmd in &self.config.on_like_commands {
+                        match std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
+                            Ok(_) => {},
+                            Err(e) => log::error!("[Backend] Failed to execute on-like command '{}': {}", cmd, e),
+                        }
+                    }
                 },
                 Some(state::Command::LoadCover(cover_url)) => {
                     let cover_path = CoverProcessor::new(self.tidal.get_cover(cover_url.clone()).unwrap()).generate_foreground().unwrap();

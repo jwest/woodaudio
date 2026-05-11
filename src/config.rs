@@ -216,6 +216,9 @@ pub struct Config {
     pub gpio: Gpio,
     pub exporter_file: ExporterFile,
     pub exporter_ftp: ExporterFTP,
+    pub on_save_commands: Vec<String>,
+    pub on_track_change_commands: Vec<String>,
+    pub on_like_commands: Vec<String>,
 }
 
 impl Config {
@@ -226,6 +229,27 @@ impl Config {
     pub fn init(path: PathBuf) -> Self {
         let conf = Ini::load_from_file(path.clone()).unwrap_or_default();
 
+        let mut on_save_commands = Vec::new();
+        if let Some(properties) = conf.section(Some("OnSave")) {
+            for (_, value) in properties.iter() {
+                on_save_commands.push(value.to_string());
+            }
+        }
+
+        let mut on_track_change_commands = Vec::new();
+        if let Some(properties) = conf.section(Some("OnTrackChange")) {
+            for (_, value) in properties.iter() {
+                on_track_change_commands.push(value.to_string());
+            }
+        }
+
+        let mut on_like_commands = Vec::new();
+        if let Some(properties) = conf.section(Some("OnLike")) {
+            for (_, value) in properties.iter() {
+                on_like_commands.push(value.to_string());
+            }
+        }
+
         Self { 
             path,
             tidal: Tidal::init(&conf),
@@ -234,6 +258,9 @@ impl Config {
             gpio: Gpio::init(&conf),
             exporter_file: ExporterFile::init(&conf),
             exporter_ftp: ExporterFTP::init(&conf),
+            on_save_commands,
+            on_track_change_commands,
+            on_like_commands,
         }
     }
     pub fn save(&self) {
@@ -244,6 +271,22 @@ impl Config {
         self.gpio.prepare_to_save(&mut conf);
         self.exporter_file.prepare_to_save(&mut conf);
         self.exporter_ftp.prepare_to_save(&mut conf);
+        for (i, cmd) in self.on_save_commands.iter().enumerate() {
+            conf.with_section(Some("OnSave")).set(format!("cmd_{}", i + 1), cmd.clone());
+        }
+        for (i, cmd) in self.on_track_change_commands.iter().enumerate() {
+            conf.with_section(Some("OnTrackChange")).set(format!("cmd_{}", i + 1), cmd.clone());
+        }
+        for (i, cmd) in self.on_like_commands.iter().enumerate() {
+            conf.with_section(Some("OnLike")).set(format!("cmd_{}", i + 1), cmd.clone());
+        }
         conf.write_to_file(self.path.clone()).unwrap();
+
+        for cmd in &self.on_save_commands {
+            match std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
+                Ok(_) => {},
+                Err(e) => log::error!("[Config] Failed to execute on-save command '{}': {}", cmd, e),
+            }
+        }
     }
 }
