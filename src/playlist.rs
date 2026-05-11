@@ -142,15 +142,13 @@ impl Playlist {
     }
     
     pub fn pop(&self) -> Option<BufferedTrack> {
-        self.sender.lock().map(|_| {
-            match self.buffered_receiver.try_recv() {
-                Ok(track) => {
-                    info!("[Playlist] Pop track: {:?}", track);
-                    Some(track)
-                },
-                Err(_) => None,
-            }
-        }).unwrap()
+        match self.buffered_receiver.try_recv() {
+            Ok(track) => {
+                info!("[Playlist] Pop track: {:?}", track);
+                Some(track)
+            },
+            Err(_) => None,
+        }
     }
     
     pub fn push_force(&self, tracks: Vec<Track>) {

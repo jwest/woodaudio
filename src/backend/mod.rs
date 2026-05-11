@@ -1,4 +1,4 @@
-use std::{error::Error, sync::{Arc, Mutex}, time::Duration};
+use std::{error::Error, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, time::Duration};
 
 use bytes::Bytes;
 
@@ -67,6 +67,7 @@ pub struct BackendService {
     playerbus: Arc<Mutex<PlayerBus>>,
     discovery_local: bool,
     storage_local: Arc<Mutex<FileStorage>>,
+    listener_ready: Arc<AtomicBool>,
 }
 
 impl BackendService {
@@ -77,6 +78,7 @@ impl BackendService {
             downloader: Downloader::init(config, tidal),
             discovery_local: config.player.without_cold_start,
             storage_local: Arc::new(Mutex::new(FileStorage::init(config.exporter_file.clone()))),
+            listener_ready: Arc::new(AtomicBool::new(false)),
         }
     }
     pub fn discover(&self) {
@@ -91,6 +93,10 @@ impl BackendService {
             self.playerbus.lock().unwrap().publish_message(state::Message::TrackDiscovered(track));
         });
     }
+    pub fn is_listener_ready(&self) -> bool {
+        self.listener_ready.load(Ordering::SeqCst)
+    }
+
     pub fn download(&mut self, track: Track) -> Result<BufferedTrack, Box<dyn Error>> {
         self.downloader.download_file(track)
     }
@@ -109,6 +115,8 @@ impl BackendService {
                 "LoadCover".to_string(),
             ]
         );
+
+        self.listener_ready.store(true, Ordering::SeqCst);
 
         let discovery_fn = |tracks| {
             self.playerbus.lock().unwrap().publish_message(state::Message::TracksDiscoveredWithHighPriority(tracks));

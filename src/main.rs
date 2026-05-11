@@ -4,6 +4,7 @@ use env_logger::Target;
 use log::error;
 use thread_priority::{ThreadBuilderExt, ThreadPriority};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 mod state;
 use state::PlayerBus;
@@ -37,6 +38,11 @@ fn service_module(backend_init: BackendInitialization, playlist: Playlist) {
 fn downloader_module(playlist: Playlist, backend_init: BackendInitialization) {
     thread::spawn(move || {
         let backend = backend_init.get_initialized();
+
+        while !backend.is_listener_ready() {
+            thread::sleep(Duration::from_millis(10));
+        }
+
         backend.discover();
 
         playlist.buffer_worker(|track| {

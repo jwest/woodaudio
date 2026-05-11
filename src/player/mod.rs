@@ -5,7 +5,6 @@ use crate::{config::Config, state::{Command, Message, PlayerBus}, playlist::Play
 use crate::playlist::BufferedTrack;
 
 mod cpal_player;
-mod snapcast;
 mod symphonia_decoder;
 
 pub trait Player {
@@ -17,17 +16,9 @@ pub trait Player {
     fn is_paused(&self) -> bool;
 }
 
-fn create_player(config: &Config) -> Box<dyn Player> {
-    match config.player.output.as_str() {
-        "snapcast" => {
-            info!("[Player] Using SnapcastPlayer output, {}:{}", config.player.snapcast_host, config.player.snapcast_port);
-            Box::new(snapcast::SnapcastPlayer::new(&config.player.snapcast_host, config.player.snapcast_port))
-        },
-        _ => {
-            info!("[Player] Using CpalPlayer output");
-            Box::new(cpal_player::CpalPlayer::new())
-        },
-    }
+fn create_player(_config: &Config) -> Box<dyn Player> {
+    info!("[Player] Using CpalPlayer output");
+    Box::new(cpal_player::CpalPlayer::new())
 }
 
 pub fn player(config: &Config, playlist: &Playlist, mut player_bus: PlayerBus) {
@@ -38,18 +29,10 @@ pub fn player(config: &Config, playlist: &Playlist, mut player_bus: PlayerBus) {
     let mut playing_time: Option<Duration> = None;
     let mut last_iteration_datetime = Instant::now();
 
-    let buffer_delay = match config.player.output.as_str() {
-        "snapcast" => Duration::from_millis(config.player.snapcast_buffer_ms as u64),
-        _ => Duration::ZERO,
-    };
-
     loop {
         if backend.is_empty() {
             if let Some(track) = playlist.pop() {
                 if backend.play_track(track.clone()) {
-                    if buffer_delay > Duration::ZERO {
-                        thread::sleep(buffer_delay);
-                    }
                     playing_time = Some(Duration::ZERO);
                     player_bus.publish_message(Message::PlayerPlayingNewTrack(track));
                 }

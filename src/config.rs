@@ -79,10 +79,6 @@ impl Tidal {
 #[derive(Clone)]
 pub struct Player {
     pub without_cold_start: bool,
-    pub output: String,
-    pub snapcast_host: String,
-    pub snapcast_port: u16,
-    pub snapcast_buffer_ms: u16,
 }
 
 impl Player {
@@ -90,19 +86,11 @@ impl Player {
         let properties = conf.section(Some("Player"));
         Self {
             without_cold_start: properties.get_bool_with_default("without_cold_start", false),
-            output: properties.get_string_with_default("output", "rodio"),
-            snapcast_host: properties.get_string_with_default("snapcast_host", "127.0.0.1"),
-            snapcast_port: properties.get_u16_with_default("snapcast_port", 4953),
-            snapcast_buffer_ms: properties.get_u16_with_default("snapcast_buffer_ms", 1500),
         }
     }
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("Player"))
-            .set("without_cold_start", bool_to_string(self.without_cold_start))
-            .set("output", self.output.clone())
-            .set("snapcast_host", self.snapcast_host.clone())
-            .set("snapcast_port", self.snapcast_port.to_string())
-            .set("snapcast_buffer_ms", self.snapcast_buffer_ms.to_string());
+            .set("without_cold_start", bool_to_string(self.without_cold_start));
     }
 }
 

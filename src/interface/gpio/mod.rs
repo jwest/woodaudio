@@ -42,7 +42,6 @@ impl Gpio {
         )?;
 
         loop {
-            info!("GPIO waiting for signal");
             thread::sleep(Duration::from_secs(1));
         }
     }
