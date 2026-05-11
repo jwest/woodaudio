@@ -132,44 +132,37 @@ impl CacheRandomRead for FileStorage {
         let files = fs::read_dir(&self.path)?;
         let file = files.choose(&mut rng).unwrap()?;
 
-        match fs::read(file.path()) {
-            Ok(content) => {
-                let tag = Tag::read_from_path(file.path()).unwrap_or_default();
-                let vorbis_comment = VorbisComment::new();
-                let vorbis = tag.vorbis_comments().unwrap_or(&vorbis_comment);
+        let tag = Tag::read_from_path(file.path()).unwrap_or_default();
+        let vorbis_comment = VorbisComment::new();
+        let vorbis = tag.vorbis_comments().unwrap_or(&vorbis_comment);
 
-                let front = tag.pictures().filter(|picture| picture.picture_type == PictureType::CoverFront).next();
+        let front = tag.pictures().filter(|picture| picture.picture_type == PictureType::CoverFront).next();
 
-                let cover = match front {
-                    Some(picture) => {
-                        let file = Self::generate_tmp_file()?;
-                        fs::write(&file, &picture.data)?;
-                        Cover {
-                            foreground: Some(file.to_str().unwrap().to_string()),
-                            background: None,
-                        }
-                    },
-                    None => {
-                        Cover::empty()
-                    },
-                };
-
-                let buffered_track = BufferedTrack {
-                    track: Track {
-                        id: "".to_string(),
-                        title: Self::get_or_default(vorbis.title()),
-                        artist_name: Self::get_or_default(vorbis.artist()),
-                        album_name: Self::get_or_default(vorbis.album()),
-                        album_image: "".to_string(),
-                        duration: Default::default(),
-                    },
-                    stream: bytes::Bytes::from(content),
-                    cover,
-                };
-                Ok(Some(buffered_track))
+        let cover = match front {
+            Some(picture) => {
+                let tmp = Self::generate_tmp_file()?;
+                fs::write(&tmp, &picture.data)?;
+                Cover {
+                    foreground: Some(tmp.to_str().unwrap().to_string()),
+                    background: None,
+                }
             },
-            Err(_) => Ok(None)
-        }
+            None => Cover::empty(),
+        };
+
+        let buffered_track = BufferedTrack {
+            track: Track {
+                id: "".to_string(),
+                title: Self::get_or_default(vorbis.title()),
+                artist_name: Self::get_or_default(vorbis.artist()),
+                album_name: Self::get_or_default(vorbis.album()),
+                album_image: "".to_string(),
+                duration: Default::default(),
+            },
+            stream_url: format!("file://{}", file.path().to_str().unwrap_or("")),
+            cover,
+        };
+        Ok(Some(buffered_track))
     }
 }
 

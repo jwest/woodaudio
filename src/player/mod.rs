@@ -4,7 +4,7 @@ use log::info;
 use crate::{config::Config, state::{Command, Message, PlayerBus}, playlist::Playlist};
 use crate::playlist::BufferedTrack;
 
-mod rodio;
+mod cpal_player;
 mod snapcast;
 mod symphonia_decoder;
 
@@ -24,8 +24,8 @@ fn create_player(config: &Config) -> Box<dyn Player> {
             Box::new(snapcast::SnapcastPlayer::new(&config.player.snapcast_host, config.player.snapcast_port))
         },
         _ => {
-            info!("[Player] Using RodioPlayer output");
-            Box::new(rodio::RodioPlayer::new())
+            info!("[Player] Using CpalPlayer output");
+            Box::new(cpal_player::CpalPlayer::new())
         },
     }
 }

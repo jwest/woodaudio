@@ -1,7 +1,6 @@
 use core::fmt;
 use std::{sync::{Arc, Mutex}, thread, time::Duration};
-use bytes::Bytes;
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 
 use log::{debug, error, info};
 
@@ -62,13 +61,13 @@ impl Cover {
 #[derive(Clone)]
 pub struct BufferedTrack {
     pub track: Track,
-    pub stream: Bytes,
+    pub stream_url: String,
     pub cover: Cover,
 }
 
 impl fmt::Debug for BufferedTrack {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "BufferedTrack: {}, {}, stream: {}, cover: {:?}", self.track.id, self.track.full_name(), !self.stream.is_empty(), self.cover)
+        write!(f, "BufferedTrack: {}, {}, stream_url: {}, cover: {:?}", self.track.id, self.track.full_name(), self.stream_url, self.cover)
     }
 }
 
@@ -85,7 +84,7 @@ pub struct Playlist {
 
 impl Playlist {
     pub fn new() -> Playlist {
-        let (sender, receiver): (Sender<Track>, Receiver<Track>) = unbounded();
+        let (sender, receiver): (Sender<Track>, Receiver<Track>) = bounded(50);
         let (buffered_sender, buffered_receiver): (Sender<BufferedTrack>, Receiver<BufferedTrack>) = unbounded();
 
         Playlist{

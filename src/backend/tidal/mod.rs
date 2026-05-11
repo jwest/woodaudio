@@ -27,17 +27,17 @@ impl Backend for TidalBackend {
         let _ = self.discover_mixes(&self.session, &discovery_fn);
         let _ = self.discover_favorities_tracks(&self.session, &discovery_fn);
     }
-    fn get_track(&mut self, track_id: String) -> Result<Bytes, Box<dyn Error>> {
+    fn get_track_url(&mut self, track_id: String) -> Result<String, Box<dyn Error>> {
         for _ in 1..5 {
             TidalBackend::sleep_for_health();
 
-            match self.session.get_track_bytes(track_id.clone()) {
-                Ok(file) => return Ok(file),
+            match self.session.get_track_url(track_id.clone()) {
+                Ok(url) => return Ok(url),
                 Err(_) => continue,
             }
         }
-    
-        Err("Track Download fail!".into())
+
+        Err("Track URL fetch fail!".into())
     }
     fn get_cover(&self, cover_url: String) -> Result<Bytes, Box<dyn Error>> {
         self.session.get_cover_bytes(cover_url)
@@ -83,7 +83,7 @@ impl TidalBackend {
             let mut rng = thread_rng();
             let mut shuffled_items = items.clone();
             shuffled_items.shuffle(&mut rng);
-            
+
             for item in shuffled_items {
                 if item["item"]["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
                     discovery_fn(Track::build_from_json(item["item"].clone()));
@@ -96,19 +96,26 @@ impl TidalBackend {
 
     fn discover_mixes(&self, session: &Session, discovery_fn: impl Fn(Track)) -> Result<(), Box<dyn Error>> {
         let v = session.get_page_for_you()?;
-        let mixes = parse_modules(v)?;
+        let mut mixes = parse_modules(v)?;
+        let mut rng = thread_rng();
+        mixes.shuffle(&mut rng);
 
-        for track in &shuffle_vec(
-            shuffle_vec(mixes).iter()
-                .filter(|mix| mix["mixType"].is_string())
-                .map(|mix| session.get_mix(mix["id"].as_str().unwrap()).unwrap())
-                .map(|mix| parse_modules(mix).unwrap())
-                .flat_map(|mix_tracks| shuffle_vec(mix_tracks.clone()))
-                .filter(|mix_track| mix_track["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready))
-                .collect()
-        ) {
-                discovery_fn(Track::build_from_json(track.clone()));
-            }
+        let mut all_tracks: Vec<Value> = mixes.into_iter()
+            .filter(|mix| mix["mixType"].is_string())
+            .filter_map(|mix| session.get_mix(mix["id"].as_str().unwrap()).ok())
+            .filter_map(|mix| parse_modules(mix).ok())
+            .flat_map(|mut mix_tracks| {
+                mix_tracks.shuffle(&mut thread_rng());
+                mix_tracks
+            })
+            .filter(|t| t["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready))
+            .collect();
+
+        all_tracks.shuffle(&mut rng);
+
+        for track in all_tracks {
+            discovery_fn(Track::build_from_json(track));
+        }
 
         Ok(())
     }
@@ -157,13 +164,6 @@ impl Track {
             duration: Duration::from_secs(item["duration"].as_u64().unwrap_or_default()),
         }
     }
-}
-
-fn shuffle_vec(items: Vec<Value>) -> Vec<Value> {
-    let mut rng_items = thread_rng();
-    let mut items_clone = items.clone();
-    items_clone.shuffle(&mut rng_items);
-    items_clone
 }
 
 fn parse_modules(value: Value) -> Result<Vec<Value>, Box<dyn Error>> {

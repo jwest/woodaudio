@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use std::error::Error;
+use std::sync::Arc;
 use std::time::Duration;
 use std::thread;
 use log::{debug, error, info, warn};
@@ -21,6 +22,7 @@ pub(super) struct Session {
     token: String,
     api_path: String,
     audio_quality: String,
+    client: Arc<Client>,
 }
 
 #[derive(Debug)]
@@ -172,14 +174,18 @@ impl Session {
             let session = res.json::<ResponseTidalSession>()?;
         
             info!("[Session] {:?}", session);
+
+            let token = config.tidal.token().clone();
+            let client = Self::build_authenticated_client(&token)?;
         
             return Ok(Session { 
                 session_id: session.session_id, 
                 country_code: session.country_code, 
                 user_id: session.user_id, 
-                token: config.tidal.token().clone(),
+                token,
                 api_path: "https://api.tidal.com/v1".to_string(),
                 audio_quality: config.tidal.audio_quality.clone(),
+                client,
             });
         }
 
@@ -229,16 +235,17 @@ impl Session {
             Self::check_internet_connection()
         }
     }
-    fn build_client(&self) -> Client {
+    fn build_authenticated_client(token: &str) -> Result<Arc<Client>, Box<dyn Error>> {
         let mut headers = header::HeaderMap::new();
-        headers.insert(header::AUTHORIZATION, header::HeaderValue::from_str(self.token.as_str()).unwrap());
-
-        reqwest::blocking::Client::builder()
+        headers.insert(header::AUTHORIZATION, header::HeaderValue::from_str(token)?);
+        let client = Client::builder()
             .default_headers(headers)
-            .build().unwrap()
+            .timeout(Duration::from_secs(30))
+            .build()?;
+        Ok(Arc::new(client))
     }
     fn request(&self, url: String) -> Result<Response, Box<dyn Error>> {
-        let res = self.build_client().get(url).send()?;
+        let res = self.client.get(url).send()?;
         Ok(res)
     }
     pub(super) fn get_page_for_you(&self) -> Result<Value, Box<dyn Error>> {
@@ -284,7 +291,7 @@ impl Session {
         Ok(result)
     }
     pub(super) fn add_track_to_favorites(&self, track_id: &str) -> Result<(), Box<dyn Error>> {
-        self.build_client().post(format!("{}/users/{}/favorites/tracks?countryCode={}&deviceType=BROWSER", self.api_path, self.user_id, self.country_code))
+        self.client.post(format!("{}/users/{}/favorites/tracks?countryCode={}&deviceType=BROWSER", self.api_path, self.user_id, self.country_code))
             .form(&[("trackId", track_id)])
             .send()?;
         Ok(())
@@ -300,7 +307,7 @@ impl Session {
             if response.status().is_client_error() {
                 let session = Self::read_session(self.token.as_str())?;
                 error!("[SESSION] renew session old: {}, new: {}", self.session_id, session.session_id);
-                self.session_id = self.session_id.clone();
+                self.session_id = session.session_id;
             }
             let status_code = response.status().to_string();
             let body_text = response.text()?;
@@ -309,19 +316,8 @@ impl Session {
             Err(format!("Failed to download track id: {} (status: {}, body: {})", track_id, status_code, body_text).into())
         }
     }
-    pub(super) fn get_track_bytes(&mut self, track_id: String) -> Result<Bytes, Box<dyn Error>> {
-        let url = self.get_track_url(track_id.clone())?;
-            
-        let file_response = Client::builder()
-            .timeout(Duration::from_secs(300))
-            .build()?.get(url).send()?;
-
-        Ok(file_response.bytes()?)
-    }
     pub(super) fn get_cover_bytes(&self, cover_url: String) -> Result<Bytes, Box<dyn Error>> {
-        let file_response = Client::builder()
-            .timeout(Duration::from_secs(500))
-            .build()?
+        let file_response = self.client
             .get(&cover_url).send()?
             .bytes()?;
 

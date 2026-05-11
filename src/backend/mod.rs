@@ -17,7 +17,7 @@ mod storage;
 pub trait Backend {
     fn init(config: &mut Config, player_bus: PlayerBus) -> Self;
     fn discovery(&self, discovery_fn: impl Fn(Track));
-    fn get_track(&mut self, track_id: String) -> Result<Bytes, Box<dyn Error>>;
+    fn get_track_url(&mut self, track_id: String) -> Result<String, Box<dyn Error>>;
     fn get_cover(&self, cover_url: String) -> Result<Bytes, Box<dyn Error>>;
     fn discovery_radio(&self, id: &str, discovery_fn: impl Fn(Vec<Track>));
     fn discovery_track(&self, id: &str, discovery_fn: impl Fn(Vec<Track>));

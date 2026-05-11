@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::{BufReader, Read};
 use std::io::Write;
 use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -6,6 +8,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use log::{error, info, warn};
+use reqwest::blocking::Client;
 
 use crate::playlist::BufferedTrack;
 use super::Player;
@@ -19,11 +22,18 @@ pub struct SnapcastPlayer {
     paused: Arc<AtomicBool>,
     stopped: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
+    http_client: Arc<Client>,
 }
 
 impl SnapcastPlayer {
     pub fn new(host: &str, port: u16) -> Self {
         let stream = Self::connect(host, port);
+        let http_client = Arc::new(
+            Client::builder()
+                .timeout(Duration::from_secs(600))
+                .build()
+                .expect("Failed to build HTTP client"),
+        );
 
         Self {
             host: host.to_string(),
@@ -33,6 +43,7 @@ impl SnapcastPlayer {
             paused: Arc::new(AtomicBool::new(false)),
             stopped: Arc::new(AtomicBool::new(false)),
             worker: None,
+            http_client,
         }
     }
 
@@ -58,7 +69,6 @@ impl SnapcastPlayer {
     fn stop_and_wait(&mut self) {
         self.stopped.store(true, Ordering::SeqCst);
 
-        // Shutdown the TCP stream to unblock any write_all in the worker thread
         if let Some(stream) = self.stream.lock().unwrap().take() {
             let _ = stream.shutdown(Shutdown::Write);
         }
@@ -66,6 +76,16 @@ impl SnapcastPlayer {
         if let Some(handle) = self.worker.take() {
             let _ = handle.join();
         }
+    }
+}
+
+fn open_stream(client: &Client, url: &str) -> Result<Box<dyn Read + Send + Sync + 'static>, Box<dyn std::error::Error>> {
+    if let Some(path) = url.strip_prefix("file://") {
+        let file = File::open(path)?;
+        Ok(Box::new(BufReader::with_capacity(256 * 1024, file)))
+    } else {
+        let response = client.get(url).send()?;
+        Ok(Box::new(response))
     }
 }
 
@@ -81,7 +101,6 @@ impl Player for SnapcastPlayer {
             None => {},
         };
 
-        // Reconnect if stream was closed (after stop or shutdown)
         if self.stream.lock().unwrap().is_none() {
             let new_stream = Self::connect(&self.host, self.port);
             *self.stream.lock().unwrap() = Some(new_stream);
@@ -95,12 +114,25 @@ impl Player for SnapcastPlayer {
         let paused = Arc::clone(&self.paused);
         let stopped = Arc::clone(&self.stopped);
         let stream = Arc::clone(&self.stream);
+        let stream_url = track.stream_url.clone();
+        let http_client = Arc::clone(&self.http_client);
 
         let handle = thread::spawn(move || {
+            info!("[SnapcastPlayer] Opening stream: {}", stream_url);
+
+            let reader = match open_stream(&http_client, &stream_url) {
+                Ok(r) => r,
+                Err(e) => {
+                    error!("[SnapcastPlayer] Failed to open stream: {}", e);
+                    empty.store(true, Ordering::SeqCst);
+                    return;
+                }
+            };
+
             info!("[SnapcastPlayer] Starting decode_streaming...");
             let mut total_bytes: usize = 0;
 
-            let result = symphonia_decoder::decode_streaming(track.stream, |samples| {
+            let result = symphonia_decoder::decode_streaming(reader, |samples| {
                 if stopped.load(Ordering::SeqCst) {
                     return false;
                 }

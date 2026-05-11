@@ -1,5 +1,4 @@
-use std::{sync::{Arc, Mutex}, time::Duration};
-use std::collections::HashMap;
+use std::{collections::VecDeque, sync::{Arc, Mutex}, time::Duration};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
@@ -99,22 +98,31 @@ pub struct State {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct Covers {
-    items: HashMap<String, String>
+    /// FIFO queue of (url, path) pairs; max MAX_COVERS entries
+    items: VecDeque<(String, String)>,
 }
+
+const MAX_COVERS: usize = 10;
 
 impl Covers {
     fn init() -> Self {
-        Self { items: HashMap::new() }
+        Self { items: VecDeque::new() }
     }
 
     pub fn get(&self, cover_url: String) -> Option<&String> {
-        self.items.get(&cover_url)
+        self.items.iter().find(|(url, _)| url == &cover_url).map(|(_, path)| path)
     }
 
     fn add_and_build(&self, cover: BufferedCover) -> Self {
-        let mut new_covers = HashMap::from(self.items.to_owned());
-        new_covers.insert(cover.id(), cover.path);
-        Covers { items: new_covers }
+        let mut new_items = self.items.clone();
+        // Remove existing entry for same URL to avoid duplicates
+        new_items.retain(|(url, _)| url != &cover.id());
+        // Evict oldest if at capacity
+        while new_items.len() >= MAX_COVERS {
+            new_items.pop_front();
+        }
+        new_items.push_back((cover.id(), cover.path));
+        Covers { items: new_items }
     }
 }
 
