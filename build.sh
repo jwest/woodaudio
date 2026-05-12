@@ -218,7 +218,7 @@ export LD_LIBRARY_PATH="${DIR}/libs"
 
 for loader in /lib/ld-linux-aarch64.so.1 /lib/ld-linux.so.3 /lib/ld-linux.so.2 /lib/ld-linux-arm64.so.1; do
     if [ -f "$loader" ]; then
-        exec "$loader" "${DIR}/woodaudio-player" "$@" >> /var/log/woodaudio.log 2>&1
+        exec "$loader" "${DIR}/woodaudio-player" "$@" >> /tmp/woodaudio.log 2>&1
     fi
 done
 
@@ -274,10 +274,13 @@ do_deploy_picore() {
     do_dist "$features" "$rebuild"
 
     echo "==> Deploy na piCore (${PI_USER}@${PI_HOST})..."
-    echo "  [1/2] Kopiowanie dist/ na ${PI_HOST}:${PI_DEST_PICORE}/..."
-    scp -r "${DIST_DIR}/" "${PI_USER}@${PI_HOST}:${PI_DEST_PICORE}/"
+    echo "  [1/3] Tworzenie katalogu ${PI_DEST_PICORE} na zdalnym hoście..."
+    ssh "${PI_USER}@${PI_HOST}" "mkdir -p ${PI_DEST_PICORE}"
 
-    echo "  [2/2] Gotowe!"
+    echo "  [2/3] Kopiowanie dist/ na ${PI_HOST}:${PI_DEST_PICORE}/..."
+    scp -r "${DIST_DIR}/." "${PI_USER}@${PI_HOST}:${PI_DEST_PICORE}/"
+
+    echo "  [3/3] Gotowe!"
     echo ""
     echo "  Uruchomienie na Pi:"
     echo "    ssh ${PI_USER}@${PI_HOST}"

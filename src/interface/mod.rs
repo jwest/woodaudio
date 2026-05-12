@@ -1,4 +1,3 @@
-pub mod http;
 #[cfg(feature = "gui")]
 pub mod gui;
 #[cfg(feature = "gpio")]

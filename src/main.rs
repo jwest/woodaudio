@@ -20,8 +20,6 @@ use config::Config;
 mod player;
 mod interface;
 
-use interface::http;
-
 #[cfg(feature = "gui")]
 use interface::gui::Gui;
 
@@ -53,14 +51,6 @@ fn downloader_module(playlist: Playlist, backend_init: BackendInitialization) {
             }
         });
     });
-}
-
-fn server_module(player_bus: PlayerBus) {
-    thread::Builder::new()
-        .name("Server module".to_owned())
-        .spawn_with_priority(ThreadPriority::Min, move |_| {
-            http::server(&player_bus);
-    }).unwrap();
 }
 
 fn player_module(config: Config, playlist: Playlist, player_bus: PlayerBus) -> JoinHandle<()> {
@@ -101,7 +91,6 @@ fn main() {
 
     service_module(backend_init.clone(), playlist.clone());
     downloader_module(playlist.clone(), backend_init.clone());
-    server_module(player_bus.clone());
 
     #[cfg(feature = "gpio")]
     gpio_module(config.clone(), player_bus.clone());

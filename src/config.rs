@@ -250,9 +250,10 @@ impl Config {
         Self::init(config_path)
     }
     pub fn init(path: PathBuf) -> Self {
-        let conf = Ini::load_from_file(path.clone()).unwrap_or_default();
+        let conf = Ini::load_from_file(path.clone())
+            .unwrap_or_default();
 
-        Self { 
+        let config = Self {
             cmd_events: CmdEvents::init(&conf),
             path,
             tidal: Tidal::init(&conf),
@@ -261,7 +262,11 @@ impl Config {
             gpio: Gpio::init(&conf),
             exporter_file: ExporterFile::init(&conf),
             exporter_ftp: ExporterFTP::init(&conf),
-        }
+        };
+
+        config.save();
+
+        config
     }
     pub fn save(&self) {
         let mut conf = Ini::new();

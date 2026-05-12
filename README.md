@@ -14,10 +14,19 @@ sudo nano /boot/firmware/cmdline.txt
 append to file: quiet splash plymouth.ignore-serial-consoles logo.nologo
 ```
 
+tce-load -wi libxkbcommon.tcz
+tce-load -wi udev257-lib.tcz
+tce-load -wi libinput.tcz
+tce-load -wi libdrm.tcz
+tce-load -wi expat2.tcz
+
+wpa_supplicant.conf
+
 /boot/firmware/config.txt:
 ```
 dtoverlay=vc4-kms-v3d,noaudio
 dtoverlay=vc4-kms-dsi-waveshare-panel,4_0_inch,rotation=90
+dtoverlay=hifiberry-digi-pro
 ```
 
 hifiberry configuration:
