@@ -1,6 +1,7 @@
 use std::time::Duration;
 use image::Rgb;
 use image::io::Reader;
+use log::info;
 use qrcode::QrCode;
 use slint::{Image, LogicalSize, Rgb8Pixel, SharedPixelBuffer, WindowSize};
 use crate::config::Config;
@@ -46,6 +47,13 @@ impl Gui {
         let request_next_bus = bus.clone();
         self.ui.global::<Data>().on_request_next_track(move || {
             request_next_bus.publish_command(Command::Next);
+        });
+
+        let request_like_bus = bus.clone();
+        self.ui.global::<Data>().on_request_like_track(move || {
+            info!("GUI: request_like_track");
+            request_like_bus.read_state().track.as_ref()
+                .map(|t| request_like_bus.publish_command(Command::Like(t.id.clone())));
         });
 
         // Cache: last decoded cover paths and their Slint Images

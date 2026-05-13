@@ -26,8 +26,11 @@ export global Data {
     out property <float> window_x_ratio: window_x / 1024;
     out property <float> window_y_ratio: window_y / 600;
 
+    in property <string> last_action: "next";
+
     callback request_new_value();
     callback request_next_track();
+    callback request_like_track();
 }
 
 component TextShadow {
@@ -114,22 +117,22 @@ component Player {
     TextShadow {
         text: "\{Data.current_duration}";
         is-bold: true;
-        font-size: 14px;
+        font-size: 20px;
         horizontal-alignment: center;
         vertical-alignment: center;
-        x: 150px * Data.window_x_ratio;
-        y: 532px * Data.window_y_ratio;
+        x: 146px * Data.window_x_ratio;
+        y: 525px * Data.window_y_ratio;
         width: 62px;
     }
 
     TextShadow {
         text: "\{Data.current_track_duration}";
         is-bold: true;
-        font-size: 14px;
+        font-size: 20px;
         horizontal-alignment: center;
         vertical-alignment: center;
         x: 837px * Data.window_x_ratio;
-        y: 532px * Data.window_y_ratio;
+        y: 525px * Data.window_y_ratio;
         width: 62px;
     }
 }
@@ -184,10 +187,56 @@ export component AppWindow inherits Window {
         x: 0;
         y: 0;
     }
-    SwipeGestureHandler {
+
+    swipe := SwipeGestureHandler {
         handle-swipe-left: true;
+        handle-swipe-right: true;
         swiped => {
-            Data.request_next_track();
+            if (self.current-position.x > self.pressed-position.x + self.width / 4) {
+                Data.last_action = "like";
+                Data.request_like_track();
+            } else if (self.current-position.x < self.pressed-position.x - self.width / 4) {
+                Data.last_action = "next";
+                Data.request_next_track();
+            }
+        }
+    }
+
+    Text {
+        text: "♥";
+        font-size: swipe.swiping ? 100px : 0;
+        color: rgb(232, 100, 100);
+        opacity: swipe.swiping ? 1 : 0;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+
+        animate font-size {
+            duration: 1000ms;
+            easing: ease-out-bounce;
+        }
+
+        animate opacity {
+            duration: 1000ms;
+            easing: ease-out-bounce;
+        }
+    }
+
+    Text {
+        text: Data.last_action == "next" ? "▶▶" : "♥";
+        font-size: swipe.swiping ? 850px : 200px;
+        color: Data.last_action == "next" ? rgb(232, 232, 232) : rgb(232, 100, 100);
+        opacity: swipe.swiping ? 1 : 0;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+
+        animate font-size {
+            duration: 2000ms;
+            easing: ease-in-sine;
+        }
+
+        animate opacity {
+            duration: 2000ms;
+            easing: ease-in-sine;
         }
     }
 
