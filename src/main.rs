@@ -83,7 +83,16 @@ fn main() {
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    let config = Config::init_default_path();
+    let args: Vec<String> = std::env::args().collect();
+    let config_path = if let Some(pos) = args.iter().position(|a| a == "--config") {
+        args.get(pos + 1).cloned().map(std::path::PathBuf::from)
+    } else {
+        None
+    };
+    let config = match config_path {
+        Some(path) => Config::init(path),
+        None => Config::init_default_path(),
+    };
     let playlist = Playlist::new();
     let player_bus = PlayerBus::new();
 

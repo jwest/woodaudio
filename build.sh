@@ -9,14 +9,29 @@ set -euo pipefail
 
 # --- Predefiniowane zmienne (dostosuj do swojej konfiguracji) ---
 
-# Docker
-IMAGE_NAME="${IMAGE_NAME:-woodaudio-builder:arm64}"
-DOCKERFILE="${DOCKERFILE:-Dockerfile.arm64}"
+# Architektura: 'arm64' (domyślnie, 64-bit) lub 'armv7' (32-bit piCore)
+ARCH="${ARCH:-arm64}"
 BUILD_DIR="/app"
 PLATFORM="${PLATFORM:-}"
 
-# Rust
-TARGET="${TARGET:-aarch64-unknown-linux-gnu}"
+# Rust — automatyczny wybór targetu na podstawie ARCH
+case "$ARCH" in
+    arm64)
+        TARGET="${TARGET:-aarch64-unknown-linux-gnu}"
+        DOCKERFILE="${DOCKERFILE:-Dockerfile.arm64}"
+        IMAGE_NAME="${IMAGE_NAME:-woodaudio-builder:arm64}"
+        ;;
+    armv7)
+        TARGET="${TARGET:-armv7-unknown-linux-gnueabihf}"
+        DOCKERFILE="${DOCKERFILE:-Dockerfile.armv7}"
+        IMAGE_NAME="${IMAGE_NAME:-woodaudio-builder:armv7}"
+        ;;
+    *)
+        echo "ERROR: Nieznana architektura ARCH='${ARCH}'. Dozwolone: arm64, armv7."
+        exit 1
+        ;;
+esac
+
 FEATURES="${FEATURES:-gui,gpio}"
 BINARY_NAME="${BINARY_NAME:-woodaudio-player}"
 
@@ -32,7 +47,7 @@ RPIOS_DEPS="${RPIOS_DEPS:-libdrm2 libgbm1 libinput10 libudev1 libasound2 libxkbc
 # Ścieżki lokalne
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DIST_DIR="${SCRIPT_DIR}/dist"
-BINARY_PATH="${SCRIPT_DIR}/target/release/${BINARY_NAME}"
+BINARY_PATH="${SCRIPT_DIR}/target/${TARGET}/release/${BINARY_NAME}"
 
 # --- Pomoc ---
 
@@ -44,7 +59,7 @@ Usage: $0 <command> [options]
 
 Commands:
   image           Build/rebuild Docker builder image
-  build           Build binary for aarch64 (auto-builds image if missing)
+  build           Build binary (auto-builds image if missing)
   dist            Build + bundle binary with .so libraries for piCore
   deploy-rpios    Build + copy binary to Pi + install runtime deps
   deploy-picore   Build + dist + copy everything to Pi (piCore)
@@ -58,12 +73,14 @@ Options (for build/dist):
   --copy-dest P  Copy binary to PATH after build
 
 Environment variables:
-  IMAGE_NAME, DOCKERFILE, FEATURES, TARGET, BINARY_NAME
+  ARCH            Target architecture: arm64 (default) or armv7
+  FEATURES, TARGET, BINARY_NAME
+  DOCKERFILE, IMAGE_NAME
   PI_HOST, PI_USER, PI_DEST_RPIOS, PI_DEST_PICORE
 
 Examples:
   ./build.sh build
-  ./build.sh dist
+  ARCH=armv7 ./build.sh dist
   PI_HOST=192.168.1.42 ./build.sh deploy-rpios
   ./build.sh clean
 EOF
@@ -97,12 +114,12 @@ do_build() {
         ensure_image
     fi
 
-    echo "==> Kompilacja ${BINARY_NAME} dla aarch64 (features: ${features})..."
+    echo "==> Kompilacja ${BINARY_NAME} dla ${TARGET} (features: ${features})..."
 
     docker run --rm ${PLATFORM:+--platform "$PLATFORM"} \
         -v "${SCRIPT_DIR}:${BUILD_DIR}" \
         "${IMAGE_NAME}" \
-        cargo build --release --features "${features}"
+        cargo build --release --target "${TARGET}" --features "${features}"
 
     echo ""
     echo "==> Kompilacja zakończona!"
@@ -128,21 +145,20 @@ do_dist() {
 
     echo "==> Eksportowanie binary i bibliotek z kontenera Docker..."
 
-    docker run --rm -i -v "${SCRIPT_DIR}:/app" "${IMAGE_NAME}" bash << 'INNERSCRIPT'
+    docker run --rm -i -e "TARGET=${TARGET}" -v "${SCRIPT_DIR}:/app" "${IMAGE_NAME}" bash << 'INNERSCRIPT'
 set -euo pipefail
 
 DIST="/app/dist"
 LIBS="${DIST}/libs"
 BINARY="${DIST}/woodaudio-player"
+TARGET="${TARGET:-aarch64-unknown-linux-gnu}"
 
 echo "  [1/3] Kopiowanie binary..."
-cp "/app/target/release/woodaudio-player" "${BINARY}"
+cp "/app/target/${TARGET}/release/woodaudio-player" "${BINARY}"
 chmod 755 "${BINARY}"
 echo "       Binary: $(basename $BINARY) ($(du -h "${BINARY}" | cut -f1))"
 
 echo "  [2/3] Zbieranie zależności bibliotek współdzielonych..."
-rm -f /tmp/lib_list.txt
-touch /tmp/lib_list.txt
 
 # Biblioteki systemowe — NIGDY nie pakujemy
 SYSTEM_LIBS="\
@@ -171,42 +187,101 @@ libdrm\
 |libffi\
 |libexpat"
 
-ldd "${BINARY}" 2>/dev/null | grep "=> /" | awk "{print \$3}" >> /tmp/lib_list.txt
+case "$TARGET" in
+    *armv7*) READELF="arm-linux-gnueabihf-readelf" ;;
+    *)        READELF="readelf" ;;
+esac
 
-sort -u /tmp/lib_list.txt | while read -r LIB; do
-    [ -e "$LIB" ] || continue
-    BNAME=$(basename "$LIB")
-    if echo "$BNAME" | grep -qE "$SYSTEM_LIBS"; then
-        echo "       (pomijam systemową) $BNAME"
-        continue
+SEARCH_DIRS="\
+/usr/lib/arm-linux-gnueabihf \
+/lib/arm-linux-gnueabihf \
+/usr/arm-linux-gnueabihf/lib \
+/usr/lib \
+/lib \
+/opt/vc/lib"
+
+is_ignored() {
+    local lib="$1"
+    if echo "$lib" | grep -qE "$SYSTEM_LIBS"; then return 0; fi
+    if echo "$lib" | grep -qE "$PICORE_LIBS"; then return 0; fi
+    return 1
+}
+
+find_lib() {
+    local soname="$1"
+    for dir in $SEARCH_DIRS; do
+        for f in "${dir}/${soname}" "${dir}/${soname%.so*}.so"; do
+            [ -f "$f" ] && echo "$f" && return 0
+        done
+    done
+    return 1
+}
+
+bundle_lib() {
+    local soname="$1"
+    local found="$2"
+    local real="$3"
+    local name="$4"
+    local dest="${LIBS}/${name}"
+    [ -f "$dest" ] || cp -f "$real" "$dest" 2>/dev/null || true
+    if [ "$soname" != "$name" ] && [ ! -e "${LIBS}/${soname}" ]; then
+        ln -sf "$name" "${LIBS}/${soname}" 2>/dev/null || true
     fi
-    if echo "$BNAME" | grep -qE "$PICORE_LIBS"; then
-        echo "       (pomijam piCore-provided) $BNAME"
-        continue
-    fi
-    REAL=$(readlink -f "$LIB" 2>/dev/null || echo "$LIB")
-    NAME=$(basename "$REAL")
-    DEST="${LIBS}/${NAME}"
-    [ -f "$DEST" ] || cp -f "$REAL" "$DEST" 2>/dev/null || true
-    BNAME2=$(basename "$LIB")
-    if [ "$BNAME2" != "$NAME" ] && [ ! -e "${LIBS}/${BNAME2}" ]; then
-        ln -sf "$NAME" "${LIBS}/${BNAME2}" 2>/dev/null || true
-    fi
+}
+
+echo "       === Rekurencyjne zbieranie zależności ==="
+
+# Kolejka: pliki do sprawdzenia (sciezki bezwzgledne)
+QUEUE_FILE="/tmp/queue.txt"
+DONE_FILE="/tmp/done.txt"
+> "$QUEUE_FILE"
+> "$DONE_FILE"
+
+# Dodaj binarke
+echo "$BINARY" >> "$QUEUE_FILE"
+
+while [ -s "$QUEUE_FILE" ]; do
+    # Pobierz pierwszy element
+    CURRENT=$(head -1 "$QUEUE_FILE")
+    sed -i '1d' "$QUEUE_FILE"
+
+    # Pomin juz sprawdzone
+    grep -qxF "$CURRENT" "$DONE_FILE" 2>/dev/null && continue
+    echo "$CURRENT" >> "$DONE_FILE"
+
+    # Odczytaj NEEDED
+    ${READELF} -d "$CURRENT" 2>/dev/null | grep "NEEDED" | awk '{print $5}' | tr -d '[]' | while read -r SONAME; do
+        [ -z "$SONAME" ] && continue
+        if is_ignored "$SONAME"; then
+            case "$CURRENT" in
+                "$BINARY") echo "       (pomijam) $SONAME" ;;
+            esac
+            continue
+        fi
+        FOUND=$(find_lib "$SONAME")
+        if [ -n "$FOUND" ]; then
+            REAL=$(readlink -f "$FOUND" 2>/dev/null || echo "$FOUND")
+            NAME=$(basename "$REAL")
+            # Jesli jeszcze nie dodany
+            if [ ! -f "${LIBS}/${NAME}" ]; then
+                bundle_lib "$SONAME" "$FOUND" "$REAL" "$NAME"
+                echo "       (dodano) $SONAME -> ${NAME}"
+                # Dodaj do kolejki (tylko jesli to nie jest symlink-dangling)
+                if [ -f "$REAL" ]; then
+                    echo "$REAL" >> "$QUEUE_FILE"
+                fi
+            fi
+        else
+            echo "       (BRAK!) $SONAME (wymagany przez $(basename "$CURRENT"))"
+        fi
+    done
 done
-rm -f /tmp/lib_list.txt
+rm -f "$QUEUE_FILE" "$DONE_FILE"
+echo "       === Koniec ==="
 
 echo "  [3/3] Weryfikacja..."
 echo "       Liczba bibliotek w libs/: $(ls -1 "${LIBS}" | wc -l)"
 echo ""
-
-echo "       Sprawdzanie czy wszystkie zależności są spełnione..."
-UNSATISFIED=$(LD_LIBRARY_PATH="${LIBS}:/lib:/usr/lib" ldd "${BINARY}" 2>/dev/null | grep "not found" || true)
-if [ -n "$UNSATISFIED" ]; then
-    echo "       UWAGA: Brakujące biblioteki:"
-    echo "$UNSATISFIED" | sed "s/^/       /"
-else
-    echo "       Wszystkie biblioteki OK!"
-fi
 INNERSCRIPT
 
     echo "==> Tworzenie skryptów uruchomieniowych..."
@@ -216,7 +291,7 @@ INNERSCRIPT
 DIR="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="${DIR}/libs"
 
-for loader in /lib/ld-linux-aarch64.so.1 /lib/ld-linux.so.3 /lib/ld-linux.so.2 /lib/ld-linux-arm64.so.1; do
+for loader in /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3 /lib/ld-linux-aarch64.so.1 /lib/ld-linux.so.2; do
     if [ -f "$loader" ]; then
         exec "$loader" "${DIR}/woodaudio-player" "$@" >> /tmp/woodaudio.log 2>&1
     fi
