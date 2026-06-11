@@ -21,6 +21,7 @@ RUN dpkg --add-architecture armhf && \
         libssl-dev:armhf \
         libxkbcommon-dev:armhf \
         cmake \
+        squashfs-tools \
         libwayland-server0:armhf \
         libwayland-client0:armhf \
         libwayland-cursor0:armhf \

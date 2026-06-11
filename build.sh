@@ -61,6 +61,7 @@ Commands:
   image           Build/rebuild Docker builder image
   build           Build binary (auto-builds image if missing)
   dist            Build + bundle binary with .so libraries for piCore
+  tcz             Build + create TCZ package (SquashFS) for piCore
   deploy-rpios    Build + copy binary to Pi + install runtime deps
   deploy-picore   Build + dist + copy everything to Pi (piCore)
   clean           Remove target/ and dist/
@@ -81,6 +82,7 @@ Environment variables:
 Examples:
   ./build.sh build
   ARCH=armv7 ./build.sh dist
+  ARCH=armv7 ./build.sh tcz
   PI_HOST=192.168.1.42 ./build.sh deploy-rpios
   ./build.sh clean
 EOF
@@ -322,6 +324,240 @@ STARTEOF
     echo "    ssh ${PI_USER}@${PI_HOST} ${PI_DEST_PICORE}/run.sh"
 }
 
+do_tcz() {
+    local features="$1"
+    local rebuild="$2"
+    local version
+
+    version=$(grep '^version = ' "${SCRIPT_DIR}/Cargo.toml" | head -1 | sed 's/.*"\(.*\)"/\1/')
+
+    do_build "$features" "" "$rebuild"
+
+    echo "==> Przygotowywanie paczki TCZ..."
+    rm -rf "${DIST_DIR}"
+    mkdir -p "${DIST_DIR}"
+
+    docker run --rm -i \
+        -e "TARGET=${TARGET}" \
+        -e "VERSION=${version}" \
+        -v "${SCRIPT_DIR}:/app" \
+        "${IMAGE_NAME}" \
+        bash << 'INNERSCRIPT'
+set -euo pipefail
+
+APP="/app"
+DIST="${APP}/dist"
+TARGET="${TARGET:-armv7-unknown-linux-gnueabihf}"
+VERSION="${VERSION:-0.5.0}"
+TCZ_ROOT="/tmp/tcz-package"
+TCZ_NAME="woodaudio"
+
+# --- Library search ---
+SYSTEM_LIBS="\
+libc.so\
+|libm.so\
+|libpthread.so\
+|librt.so\
+|libdl.so\
+|libgcc_s.so\
+|ld-linux"
+
+PICORE_LIBS="\
+libdrm\
+|libudev\
+|libinput\
+|libxkbcommon\
+|libasound\
+|libssl\
+|libcrypto\
+|libevdev\
+|libmtdev\
+|libglib\
+|libgobject\
+|libpcre\
+|libffi\
+|libexpat"
+
+case "$TARGET" in
+    *armv7*) READELF="arm-linux-gnueabihf-readelf"; STRIP="arm-linux-gnueabihf-strip" ;;
+    *)        READELF="readelf"; STRIP="strip" ;;
+esac
+
+SEARCH_DIRS="\
+/usr/lib/arm-linux-gnueabihf \
+/lib/arm-linux-gnueabihf \
+/usr/arm-linux-gnueabihf/lib \
+/usr/lib \
+/lib"
+
+is_ignored() {
+    local lib="$1"
+    if echo "$lib" | grep -qE "$SYSTEM_LIBS"; then return 0; fi
+    if echo "$lib" | grep -qE "$PICORE_LIBS"; then return 0; fi
+    return 1
+}
+
+find_lib() {
+    local soname="$1"
+    for dir in $SEARCH_DIRS; do
+        for f in "${dir}/${soname}" "${dir}/${soname%.so*}.so"; do
+            [ -f "$f" ] && echo "$f" && return 0
+        done
+    done
+    return 1
+}
+
+lib_to_tcz() {
+    local lib="$1"
+    case "$lib" in
+        libasound*)  echo "libasound.tcz" ;;
+        libdrm*)     echo "libdrm.tcz" ;;
+        libudev*)    echo "udev-lib.tcz" ;;
+        libinput*)   echo "libinput.tcz" ;;
+        libxkbcommon*) echo "libxkbcommon.tcz" ;;
+        libssl*)     echo "openssl.tcz" ;;
+        libcrypto*)  echo "openssl.tcz" ;;
+        libevdev*)   echo "libevdev.tcz" ;;
+        libmtdev*)   echo "mtdev.tcz" ;;
+        libglib*)    echo "glib2.tcz" ;;
+        libgobject*) echo "glib2.tcz" ;;
+        libpcre*)    echo "pcre2.tcz" ;;
+        libffi*)     echo "libffi7.tcz" ;;
+        libexpat*)   echo "expat2.tcz" ;;
+    esac
+}
+
+# --- Build TCZ structure ---
+rm -rf "$TCZ_ROOT"
+mkdir -p "${TCZ_ROOT}/usr/local/bin"
+mkdir -p "${TCZ_ROOT}/usr/local/lib"
+mkdir -p "${TCZ_ROOT}/usr/local/etc/woodaudio"
+mkdir -p "${TCZ_ROOT}/usr/local/tce.installed"
+
+echo "  [1/5] Kopiowanie i stripowanie binary..."
+cp "${APP}/target/${TARGET}/release/woodaudio-player" "${TCZ_ROOT}/usr/local/bin/woodaudio-player"
+${STRIP} --strip-unneeded "${TCZ_ROOT}/usr/local/bin/woodaudio-player"
+echo "       Binary: $(ls -lh "${TCZ_ROOT}/usr/local/bin/woodaudio-player" | awk '{print $5}')"
+
+echo "  [2/5] Zbieranie bibliotek współdzielonych..."
+
+QUEUE_FILE="/tmp/queue.txt"
+DONE_FILE="/tmp/done.txt"
+EXCLUDED_FILE="/tmp/excluded_libs.txt"
+> "$QUEUE_FILE"
+> "$DONE_FILE"
+> "$EXCLUDED_FILE"
+
+echo "${TCZ_ROOT}/usr/local/bin/woodaudio-player" >> "$QUEUE_FILE"
+
+while [ -s "$QUEUE_FILE" ]; do
+    CURRENT=$(head -1 "$QUEUE_FILE")
+    sed -i '1d' "$QUEUE_FILE"
+    grep -qxF "$CURRENT" "$DONE_FILE" 2>/dev/null && continue
+    echo "$CURRENT" >> "$DONE_FILE"
+
+    ${READELF} -d "$CURRENT" 2>/dev/null | grep "NEEDED" | awk '{print $5}' | tr -d '[]' | while read -r SONAME; do
+        [ -z "$SONAME" ] && continue
+        if is_ignored "$SONAME"; then
+            echo "$SONAME" >> "$EXCLUDED_FILE"
+            continue
+        fi
+        FOUND=$(find_lib "$SONAME")
+        if [ -n "$FOUND" ]; then
+            REAL=$(readlink -f "$FOUND" 2>/dev/null || echo "$FOUND")
+            NAME=$(basename "$REAL")
+            DEST="${TCZ_ROOT}/usr/local/lib/${NAME}"
+            if [ ! -f "$DEST" ]; then
+                cp -f "$REAL" "$DEST" 2>/dev/null || true
+                if [ "$SONAME" != "$NAME" ] && [ ! -e "${TCZ_ROOT}/usr/local/lib/${SONAME}" ]; then
+                    ln -sf "$NAME" "${TCZ_ROOT}/usr/local/lib/${SONAME}" 2>/dev/null || true
+                fi
+                echo "$REAL" >> "$QUEUE_FILE"
+                echo "       (dodano) $SONAME -> ${NAME}"
+            fi
+        else
+            echo "       (BRAK!) $SONAME (wymagany przez $(basename "$CURRENT"))"
+        fi
+    done
+done
+rm -f "$QUEUE_FILE" "$DONE_FILE"
+
+echo "       Bibliotek w /usr/local/lib/: $(ls -1 "${TCZ_ROOT}/usr/local/lib" | grep -v '^\.' | wc -l)"
+
+echo "  [3/5] Tworzenie plików konfiguracyjnych..."
+cp "${APP}/sample_config.ini" "${TCZ_ROOT}/usr/local/etc/woodaudio/config.ini.sample"
+
+cat > "${TCZ_ROOT}/usr/local/tce.installed/${TCZ_NAME}" << 'TCESCRIPT'
+#!/bin/sh
+CONFIG_DIR="/usr/local/etc/woodaudio"
+CONFIG_FILE="$CONFIG_DIR/config.ini"
+SAMPLE="$CONFIG_DIR/config.ini.sample"
+[ -f "$CONFIG_FILE" ] || cp "$SAMPLE" "$CONFIG_FILE"
+TCESCRIPT
+chmod 755 "${TCZ_ROOT}/usr/local/tce.installed/${TCZ_NAME}"
+
+echo "  [4/5] Tworzenie plików metadanych..."
+
+
+cat > "${DIST}/${TCZ_NAME}.tcz.info" << INFOEOF
+Title:          ${TCZ_NAME}.tcz
+Description:    Tidal HiFi audio player for Raspberry Pi with touch GUI
+Version:        ${VERSION}
+Author:         jwest
+Original-site:  https://github.com/jwest/woodaudio
+Copying-policy: MIT
+Size:           $(du -sh "${TCZ_ROOT}" | cut -f1)
+Extension_by:   woodaudio team
+Tags:           audio tidal hifi player raspberry-pi
+Comments:       Requires KMS/DRM display and ALSA audio.
+                Configure device tree in /boot/config.txt.
+                ----
+                Usage: woodaudio-player --config /usr/local/etc/woodaudio/config.ini
+                ----
+                Requires Tidal HiFi subscription.
+Change-log:     $(date +%Y-%m-%d) First version, ${VERSION}
+Current:        $(date +%Y-%m-%d) Version ${VERSION}
+INFOEOF
+
+
+if [ -s "$EXCLUDED_FILE" ]; then
+    sort -u "$EXCLUDED_FILE" | while read -r lib; do
+        lib_to_tcz "$lib"
+    done | sort -u > "${DIST}/${TCZ_NAME}.tcz.dep"
+    echo "       .dep: $(wc -l < "${DIST}/${TCZ_NAME}.tcz.dep") zależności"
+else
+    > "${DIST}/${TCZ_NAME}.tcz.dep"
+    echo "       .dep: brak zależności"
+fi
+rm -f "$EXCLUDED_FILE"
+
+echo "  [5/5] Tworzenie SquashFS..."
+cd /tmp
+mksquashfs "${TCZ_ROOT}" "${DIST}/${TCZ_NAME}.tcz" -b 4k -no-xattrs
+echo "       TCZ: $(ls -lh "${DIST}/${TCZ_NAME}.tcz" | awk '{print $5}')"
+
+unsquashfs -l "${DIST}/${TCZ_NAME}.tcz" 2>/dev/null | sed 's/squashfs-root//' > "${DIST}/${TCZ_NAME}.tcz.list"
+
+md5sum "${DIST}/${TCZ_NAME}.tcz" | cut -d' ' -f1 > "${DIST}/${TCZ_NAME}.tcz.md5.txt"
+
+rm -rf "$TCZ_ROOT"
+
+echo ""
+echo "=== Podsumowanie ==="
+echo "  woodaudio.tcz:         $(ls -lh "${DIST}/${TCZ_NAME}.tcz" | awk '{print $5}')"
+echo "  woodaudio.tcz.info     $(ls -lh "${DIST}/${TCZ_NAME}.tcz.info" | awk '{print $5}')"
+echo "  woodaudio.tcz.dep      $(wc -l < "${DIST}/${TCZ_NAME}.tcz.dep") dependencies"
+echo "  woodaudio.tcz.list     $(wc -l < "${DIST}/${TCZ_NAME}.tcz.list") files"
+echo "  woodaudio.tcz.md5.txt  generated"
+INNERSCRIPT
+
+    echo ""
+    echo "==> Gotowe! Paczka TCZ w: ${DIST_DIR}/"
+    echo "    Zainstaluj na piCore:"
+    echo "      tce-load -i ${DIST_DIR}/woodaudio.tcz"
+    echo "      woodaudio-player --config /usr/local/etc/woodaudio/config.ini"
+}
+
 do_deploy_rpios() {
     local features="$1"
     local rebuild="$2"
@@ -400,6 +636,7 @@ case "$SUBCOMMAND" in
     image)        do_image ;;
     build)        do_build "$FEATURES" "$COPY_DEST" "$REBUILD" ;;
     dist)         do_dist "$FEATURES" "$REBUILD" ;;
+    tcz)          do_tcz "$FEATURES" "$REBUILD" ;;
     deploy-rpios) do_deploy_rpios "$FEATURES" "$REBUILD" ;;
     deploy-picore) do_deploy_picore "$FEATURES" "$REBUILD" ;;
     clean)        do_clean ;;

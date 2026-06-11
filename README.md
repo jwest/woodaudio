@@ -75,6 +75,7 @@ Budowanie natywne na Raspberry Pi jest możliwe, ale bardzo wolne. Zamiast tego 
 |---------|------|
 | `./build.sh build` | Kompilacja dla aarch64 (auto-build obrazu jeśli brak) |
 | `./build.sh dist` | Kompilacja + pakowanie dist/ z bibliotekami .so (dla piCore) |
+| `./build.sh tcz` | Kompilacja + paczka TCZ (SquashFS) dla piCore — gotowa do tce-load |
 | `./build.sh image` | Budowa/przebudowa obrazu Docker |
 | `./build.sh deploy-rpios` | Kompilacja + scp binary + instalacja zależności na Raspberry Pi OS |
 | `./build.sh deploy-picore` | Kompilacja + dist + scp dist/ na piCore |
@@ -158,6 +159,36 @@ piCore to minimalistyczna dystrybucja bez menedżera pakietów apt. Zamiast inst
 #   3. Tworzy skrypty uruchomieniowe (run.sh, start-woodaudio.sh)
 #   4. Kopiuje całość na Pi przez scp
 ```
+
+### Paczka TCZ (do instalacji przez tce-load)
+
+Nowość! Można zbudować gotową paczkę TCZ, którą instaluje się standardowym mechanizmem Tiny Core Linux:
+
+```bash
+# Budowa paczki TCZ dla piCore 32-bit (armv7):
+ARCH=armv7 ./build.sh tcz
+
+# Wynik w dist/:
+#   dist/woodaudio.tcz
+#   dist/woodaudio.tcz.info
+#   dist/woodaudio.tcz.dep
+#   dist/woodaudio.tcz.list
+#   dist/woodaudio.tcz.md5.txt
+
+# Instalacja na piCorePlayer:
+#   tce-load -i woodaudio.tcz
+#   woodaudio-player --config /usr/local/etc/woodaudio/config.ini
+```
+
+Paczka zawiera:
+- Binary w `/usr/local/bin/woodaudio-player` (stripped)
+- Bundle'owane biblioteki .so w `/usr/local/lib/` (automatycznie znajdowane przez linker)
+- Przykładowy config w `/usr/local/etc/woodaudio/config.ini.sample`
+- Skrypt `tce.installed/woodaudio`, który przy pierwszym ładowaniu kopiuje config.sample → config.ini
+
+Zależności runtime (`woodaudio.tcz.dep`) są automatycznie instalowane przez `tce-load`.
+
+### Dystrybucja z bibliotekami .so (alternatywa, bez TCZ)
 
 Katalog `dist/` (generowany przez `./build.sh dist`):
 ```
