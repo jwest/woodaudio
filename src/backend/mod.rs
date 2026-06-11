@@ -4,7 +4,6 @@ use bytes::Bytes;
 
 use crate::{config::Config, state::{self, PlayerBus}, playlist::{BufferedTrack, Playlist, Track}};
 use crate::backend::cover::CoverProcessor;
-use crate::backend::storage::{CacheRandomRead, FileStorage};
 use crate::playlist::BufferedCover;
 
 use self::{downloader::Downloader, tidal::TidalBackend};
@@ -12,7 +11,6 @@ use self::{downloader::Downloader, tidal::TidalBackend};
 mod tidal;
 mod downloader;
 mod cover;
-mod storage;
 
 pub trait Backend {
     fn init(config: &mut Config, player_bus: PlayerBus) -> Self;
@@ -66,8 +64,6 @@ pub struct BackendService {
     tidal: TidalBackend,
     downloader: Downloader,
     playerbus: Arc<Mutex<PlayerBus>>,
-    discovery_local: bool,
-    storage_local: Arc<Mutex<FileStorage>>,
     listener_ready: Arc<AtomicBool>,
 }
 
@@ -78,19 +74,10 @@ impl BackendService {
             tidal: tidal.clone(),
             playerbus: Arc::new(Mutex::new(playerbus)),
             downloader: Downloader::init(config, tidal),
-            discovery_local: config.player.without_cold_start,
-            storage_local: Arc::new(Mutex::new(FileStorage::init(config.exporter_file.clone()))),
             listener_ready: Arc::new(AtomicBool::new(false)),
         }
     }
     pub fn discover(&self) {
-        if self.discovery_local {
-            for _ in 0..5 {
-                let audio_file = self.storage_local.try_lock().unwrap().read_random_file(None).unwrap().unwrap();
-                self.playerbus.lock().unwrap().publish_message(state::Message::TrackDiscoveredLocally(audio_file));
-            }
-        }
-
         self.tidal.discovery(move |track| {
             self.playerbus.lock().unwrap().publish_message(state::Message::TrackDiscovered(track));
         });
@@ -133,9 +120,6 @@ impl BackendService {
                 },
                 Some(state::Command::AddTracksToPlaylistForce(tracks)) => {
                     playlist.push_force(tracks);
-                },
-                Some(state::Command::AddBufferedTracksToPlaylist(tracks)) => {
-                    playlist.push_buffered(tracks);
                 },
                 Some(state::Command::Radio(track_id)) => {
                     let _ = self.tidal.discovery_radio(&track_id, discovery_fn);

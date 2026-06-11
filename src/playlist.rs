@@ -135,11 +135,6 @@ impl Playlist {
             for t in &tracks { let _ = sender.send(t.clone()); }
         });
     }
-
-    pub fn push_buffered(&self, tracks: Vec<BufferedTrack>) {
-        debug!("[Playlist] Push tracks: {:?}", tracks);
-        for track in &tracks { let _ = self.buffered_sender.send(track.clone()); }
-    }
     
     pub fn pop(&self) -> Option<BufferedTrack> {
         match self.buffered_receiver.try_recv() {

@@ -8,7 +8,6 @@ const TIDAL_CLIENT_SECRET: &str = "oKOXfJW371cX6xaZ0PyhgGNBdNLlBZd4AKKYougMjik";
 trait ParseIni {
     fn get_string(&self, name: &str) -> String;
     fn get_string_with_default(&self, name: &str, default: &str) -> String;
-    fn get_bool(&self, name: &str) -> bool; 
     fn get_bool_with_default(&self, name: &str, default: bool) -> bool;
     fn get_u16_with_default(&self, name: &str, default: u16) -> u16;
 }
@@ -19,9 +18,6 @@ impl ParseIni for Option<&Properties> {
     }
     fn get_string_with_default(&self, name: &str, default: &str) -> String {
         self.map(|properties| properties.get(name)).flatten().unwrap_or(default).to_string()   
-    }
-    fn get_bool(&self, name: &str) -> bool {
-        matches!(self.get_string(name).as_str(), "true")
     }
     fn get_bool_with_default(&self, name: &str, default: bool) -> bool {
         match self.get_string(name).as_str() {
@@ -72,25 +68,6 @@ impl Tidal {
             .set("access_token", self.access_token.clone())
             .set("refresh_token", self.refresh_token.clone())
             .set("audio_quality", self.audio_quality.clone());
-    }
-}
-
-#[derive(Debug)]
-#[derive(Clone)]
-pub struct Player {
-    pub without_cold_start: bool,
-}
-
-impl Player {
-    fn init(conf: &Ini) -> Self {
-        let properties = conf.section(Some("Player"));
-        Self {
-            without_cold_start: properties.get_bool_with_default("without_cold_start", false),
-        }
-    }
-    fn prepare_to_save(&self, ini: &mut Ini) {
-        ini.with_section(Some("Player"))
-            .set("without_cold_start", bool_to_string(self.without_cold_start));
     }
 }
 
@@ -152,62 +129,6 @@ impl Gpio {
 
 #[derive(Debug)]
 #[derive(Clone)]
-pub struct ExporterFTP {
-    pub enabled: bool,
-    pub server: String,
-    pub share: String,
-    pub password: String,
-    pub username: String,
-    pub cache_read: bool,
-}
-
-#[derive(Debug)]
-#[derive(Clone)]
-pub struct ExporterFile {
-    pub enabled: bool,
-    pub path: String,
-}
-
-impl crate::config::ExporterFile {
-    fn init(conf: &Ini) -> Self {
-        let properties = conf.section(Some("ExporterFile"));
-        Self {
-            enabled: properties.get_bool("enabled"),
-            path: properties.get_string("path"),
-        }
-    }
-    fn prepare_to_save(&self, ini: &mut Ini) {
-        ini.with_section(Some("ExporterFile"))
-            .set("enabled", bool_to_string(self.enabled))
-            .set("path", self.path.clone());
-    }
-}
-
-impl ExporterFTP {
-    fn init(conf: &Ini) -> Self {
-        let properties = conf.section(Some("ExporterFTP"));
-        Self {
-            enabled: properties.get_bool("enabled"),
-            server: properties.get_string("server"),
-            share: properties.get_string("share"),
-            password: properties.get_string("password"),
-            username: properties.get_string("username"),
-            cache_read: properties.get_bool("cache_read"),
-        }
-    }
-    fn prepare_to_save(&self, ini: &mut Ini) {
-        ini.with_section(Some("ExporterFTP"))
-            .set("enabled", bool_to_string(self.enabled))
-            .set("server", self.server.clone())
-            .set("share", self.share.clone())
-            .set("password", self.password.clone())
-            .set("username", self.username.clone())
-            .set("cache_read", bool_to_string(self.cache_read));
-    }
-}
-
-#[derive(Debug)]
-#[derive(Clone)]
 pub struct CmdEvents {
     pub on_save: String,
     pub on_track_change: String,
@@ -236,11 +157,8 @@ impl CmdEvents {
 pub struct Config {
     path: PathBuf,
     pub tidal: Tidal,
-    pub player: Player,
     pub gui: Gui,
     pub gpio: Gpio,
-    pub exporter_file: ExporterFile,
-    pub exporter_ftp: ExporterFTP,
     pub cmd_events: CmdEvents,
 }
 
@@ -257,11 +175,8 @@ impl Config {
             cmd_events: CmdEvents::init(&conf),
             path,
             tidal: Tidal::init(&conf),
-            player: Player::init(&conf),
             gui: Gui::init(&conf),
             gpio: Gpio::init(&conf),
-            exporter_file: ExporterFile::init(&conf),
-            exporter_ftp: ExporterFTP::init(&conf),
         };
 
         config.save();
@@ -271,11 +186,8 @@ impl Config {
     pub fn save(&self) {
         let mut conf = Ini::new();
         self.tidal.prepare_to_save(&mut conf);
-        self.player.prepare_to_save(&mut conf);
         self.gui.prepare_to_save(&mut conf);
         self.gpio.prepare_to_save(&mut conf);
-        self.exporter_file.prepare_to_save(&mut conf);
-        self.exporter_ftp.prepare_to_save(&mut conf);
         self.cmd_events.prepare_to_save(&mut conf);
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).unwrap();

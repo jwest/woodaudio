@@ -17,12 +17,9 @@ pub enum Command {
     PlayTrackForce(String),
     PlayAlbumForce(String),
     PlayArtistForce(String),
-    #[warn(dead_code)]
     ShowScreen(String),
     AddTracksToPlaylist(Vec<Track>),
     AddTracksToPlaylistForce(Vec<Track>),
-    AddBufferedTracksToPlaylist(Vec<BufferedTrack>),
-    LoadLikedAlbum,
     LoadCover(String)
 }
 
@@ -40,8 +37,6 @@ impl Command {
             Command::ShowScreen(_) => "ShowScreen".to_owned(),
             Command::AddTracksToPlaylist(_) => "AddTracksToPlaylist".to_owned(),
             Command::AddTracksToPlaylistForce(_) => "AddTracksToPlaylistForce".to_owned(),
-            Command::AddBufferedTracksToPlaylist(_) => "AddBufferedTracksToPlaylist".to_owned(),
-            Command::LoadLikedAlbum => "LoadLikedAlbum".to_owned(),
             Command::LoadCover(_) => "LoadCover".to_owned(),
         }
     }
@@ -59,31 +54,19 @@ pub enum Message {
     TrackAddedToFavorites,
     TrackDiscovered(Track),
     TracksDiscoveredWithHighPriority(Vec<Track>),
-    TrackDiscoveredLocally(BufferedTrack),
-
-    UserPlay,
-    UserPause,
-    UserPlayNext,
-    UserLike,
-    UserLoadRadio,
-    UserPlayTrack(String),
-    UserPlayAlbum(String),
-    UserPlayArtist(String),
-
-    UserClickActions,
-    UserClickLikedAlbumsButton,
-    UserClickBackToPlayer,
 
     TidalBackendStarted,
     TidalBackendLoginLinkCreated(String),
     TidalBackendInitialized,
+
+    UserLike,
+    UserPlayNext,
 
     RadioTracksLoaded,
     TrackLoaded,
     AlbumTracksLoaded,
     ArtistTracksLoaded,
     CoverLoaded(BufferedCover),
-    CoverNeeded(String),
 }
 
 #[derive(Debug)]
@@ -98,7 +81,6 @@ pub struct State {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct Covers {
-    /// FIFO queue of (url, path) pairs; max MAX_COVERS entries
     items: VecDeque<(String, String)>,
 }
 
@@ -109,15 +91,9 @@ impl Covers {
         Self { items: VecDeque::new() }
     }
 
-    pub fn get(&self, cover_url: String) -> Option<&String> {
-        self.items.iter().find(|(url, _)| url == &cover_url).map(|(_, path)| path)
-    }
-
     fn add_and_build(&self, cover: BufferedCover) -> Self {
         let mut new_items = self.items.clone();
-        // Remove existing entry for same URL to avoid duplicates
         new_items.retain(|(url, _)| url != &cover.id());
-        // Evict oldest if at capacity
         while new_items.len() >= MAX_COVERS {
             new_items.pop_front();
         }
@@ -308,21 +284,9 @@ impl PlayerBus {
             Message::PlayerToPause => State { player: PlayerState { case: PlayerStateCase::Paused, ..prev_state.player }, ..prev_state },
             Message::PlayerElapsed(duration) => State { player: PlayerState { case: prev_state.player.case, playing_time: Some(duration) }, ..prev_state },
             Message::PlayerQueueIsEmpty => State { track: None, player: PlayerState { case: PlayerStateCase::Loading, playing_time: None }, ..prev_state },
-            Message::UserPlay => { self.publish_command(Command::Play); prev_state },
-            Message::UserPause => { self.publish_command(Command::Pause); prev_state },
-            Message::UserPlayNext => { self.publish_command(Command::Next); prev_state },
-            Message::UserLike => { self.publish_command(Command::Like(prev_state.track.clone().unwrap().id)); prev_state },
-            Message::UserLoadRadio => { self.publish_command(Command::Pause); self.publish_command(Command::Radio(prev_state.track.clone().unwrap().id)); prev_state },
-            Message::UserPlayTrack(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayTrackForce(track)); prev_state },
-            Message::UserPlayAlbum(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayAlbumForce(track)); prev_state },
-            Message::UserPlayArtist(track) => { self.publish_command(Command::Pause); self.publish_command(Command::PlayArtistForce(track)); prev_state },
             Message::TrackAddedToFavorites => { prev_state },
             Message::TrackDiscovered(track) => { self.publish_command(Command::AddTracksToPlaylist(vec![track])); prev_state },
             Message::TracksDiscoveredWithHighPriority(tracks) => { self.publish_command(Command::AddTracksToPlaylistForce(tracks)); prev_state },
-            Message::TrackDiscoveredLocally(buffered_stream) => { self.publish_command(Command::AddBufferedTracksToPlaylist(vec![buffered_stream])); prev_state },
-            Message::UserClickActions => { self.publish_command(Command::ShowScreen("/actions".to_string())); prev_state },
-            Message::UserClickBackToPlayer => { self.publish_command(Command::ShowScreen("/player".to_string())); prev_state },
-            Message::UserClickLikedAlbumsButton => { self.publish_command(Command::ShowScreen("/browse".to_string())); self.publish_command(Command::LoadLikedAlbum); prev_state },
             Message::TidalBackendStarted => State { backends: BackendsState { tidal: BackendState::Initialization, ..prev_state.backends }, ..prev_state },
             Message::TidalBackendLoginLinkCreated(login_link) =>  State { backends: BackendsState { tidal: BackendState::WaitingForLoginByLink(login_link), ..prev_state.backends }, ..prev_state },
             Message::TidalBackendInitialized => { self.publish_command(Command::ShowScreen("/player".to_string())); State { backends: BackendsState { tidal: BackendState::Ready, ..prev_state.backends }, ..prev_state }},
@@ -330,8 +294,9 @@ impl PlayerBus {
             Message::TrackLoaded => { self.publish_command(Command::Next); prev_state },
             Message::AlbumTracksLoaded => { self.publish_command(Command::Next); prev_state },
             Message::ArtistTracksLoaded => { self.publish_command(Command::Next); prev_state },
-            Message::CoverNeeded(cover_url) => { self.publish_command(Command::LoadCover(cover_url)); prev_state },
             Message::CoverLoaded(cover) => State { covers: prev_state.covers.add_and_build(cover), ..prev_state },
+            Message::UserPlayNext => { self.publish_command(Command::Next); prev_state },
+            Message::UserLike => { self.publish_command(Command::Like(prev_state.track.clone().unwrap().id)); prev_state },
         };
 
         *state = next_state;
