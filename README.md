@@ -188,6 +188,47 @@ Paczka zawiera:
 
 Zależności runtime (`woodaudio.tcz.dep`) są automatycznie instalowane przez `tce-load`.
 
+### Obraz SD dla piCorePlayer z pre-instalowanym woodaudio
+
+Można zbudować gotowy do flashowania obraz karty SD piCorePlayer z woodaudio
+wbudowanym na stałe — zero konfiguracji, wystarczy włożyć kartę i uruchomić Raspberry Pi.
+
+**Wymagania:** Docker, curl, xz-utils.
+
+```bash
+# Krok 1: Zbuduj paczkę TCZ (armv7 dla 32-bit pCP):
+ARCH=armv7 ./build.sh tcz
+
+# Krok 2: Zbuduj obraz SD:
+./build_image.sh
+```
+
+**Co robi skrypt:**
+
+1. Pobiera oficjalny obraz piCorePlayer 11.1.0 32-bit
+2. Kopiuje `woodaudio.tcz` + zależności do `/tce/optional/`
+3. Dodaje `woodaudio.tcz` do `/tce/onboot.lst` (automatyczny start przy bootowaniu)
+4. Tworzy plik konfiguracyjny `/etc/woodaudio/config.ini` (na bazie `sample_config.ini`)
+5. Dodaje wpis do `/opt/bootlocal.sh` — woodaudio startuje automatycznie jako usługa
+6. Pakuje zmiany do `mydata.tgz` (mechanizm backupu piCorePlayer)
+
+**Wynik:** `woodaudio-pcp11.1.0.img` w katalogu projektu.
+
+**Flashowanie na kartę SD:**
+
+- Raspberry Pi Imager → wybierz "Use custom image"
+- Lub przez `dd`:
+  ```bash
+  dd if=woodaudio-pcp11.1.0.img of=/dev/sdX bs=4M status=progress
+  ```
+  (zastąp `/dev/sdX` ścieżką swojej karty SD)
+
+**Po pierwszym uruchomieniu:**
+
+- woodaudio uruchomi się automatycznie z przykładowym configiem
+- Skonfiguruj konto Tidal przez SSH (`/etc/woodaudio/config.ini`)
+- Zrestartuj usługę lub uruchom ponownie Raspberry Pi
+
 ### Dystrybucja z bibliotekami .so (alternatywa, bez TCZ)
 
 Katalog `dist/` (generowany przez `./build.sh dist`):

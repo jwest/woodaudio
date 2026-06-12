@@ -62,6 +62,8 @@ Commands:
   build           Build binary (auto-builds image if missing)
   dist            Build + bundle binary with .so libraries for piCore
   tcz             Build + create TCZ package (SquashFS) for piCore
+  pcp-image       Build TCZ + create piCorePlayer SD image with woodaudio pre-installed
+  install-pcp     Install woodaudio.tcz on a running piCorePlayer (via SSH)
   deploy-rpios    Build + copy binary to Pi + install runtime deps
   deploy-picore   Build + dist + copy everything to Pi (piCore)
   clean           Remove target/ and dist/
@@ -78,11 +80,15 @@ Environment variables:
   FEATURES, TARGET, BINARY_NAME
   DOCKERFILE, IMAGE_NAME
   PI_HOST, PI_USER, PI_DEST_RPIOS, PI_DEST_PICORE
+  PCP_HOST, PCP_USER  piCorePlayer host/user for install-pcp (default: 192.168.1.60, tc)
 
 Examples:
   ./build.sh build
   ARCH=armv7 ./build.sh dist
   ARCH=armv7 ./build.sh tcz
+  ./build.sh pcp-image
+  ./build.sh install-pcp
+  PCP_HOST=192.168.1.42 ./build.sh install-pcp
   PI_HOST=192.168.1.42 ./build.sh deploy-rpios
   ./build.sh clean
 EOF
@@ -175,7 +181,6 @@ libc.so\
 # Biblioteki dostarczane przez piCore jako tcz
 PICORE_LIBS="\
 libdrm\
-|libudev\
 |libinput\
 |libxkbcommon\
 |libasound\
@@ -292,6 +297,7 @@ INNERSCRIPT
 #!/bin/sh
 DIR="$(cd "$(dirname "$0")" && pwd)"
 export LD_LIBRARY_PATH="${DIR}/libs"
+export SLINT_KMS_ROTATION=90
 
 for loader in /lib/ld-linux-armhf.so.3 /lib/ld-linux.so.3 /lib/ld-linux-aarch64.so.1 /lib/ld-linux.so.2; do
     if [ -f "$loader" ]; then
@@ -364,7 +370,6 @@ libc.so\
 
 PICORE_LIBS="\
 libdrm\
-|libudev\
 |libinput\
 |libxkbcommon\
 |libasound\
@@ -489,10 +494,14 @@ cp "${APP}/sample_config.ini" "${TCZ_ROOT}/usr/local/etc/woodaudio/config.ini.sa
 
 cat > "${TCZ_ROOT}/usr/local/tce.installed/${TCZ_NAME}" << 'TCESCRIPT'
 #!/bin/sh
-CONFIG_DIR="/usr/local/etc/woodaudio"
+SAMPLE="/usr/local/etc/woodaudio/config.ini.sample"
+CONFIG_DIR="/home/tc/.config/woodaudio"
 CONFIG_FILE="$CONFIG_DIR/config.ini"
-SAMPLE="$CONFIG_DIR/config.ini.sample"
-[ -f "$CONFIG_FILE" ] || cp "$SAMPLE" "$CONFIG_FILE"
+if [ ! -f "$CONFIG_FILE" ]; then
+    mkdir -p "$CONFIG_DIR"
+    cp "$SAMPLE" "$CONFIG_FILE"
+    chmod 666 "$CONFIG_FILE"
+fi
 TCESCRIPT
 chmod 755 "${TCZ_ROOT}/usr/local/tce.installed/${TCZ_NAME}"
 
@@ -598,6 +607,118 @@ do_deploy_picore() {
     echo "    ${PI_DEST_PICORE}/run.sh"
 }
 
+do_install_pcp() {
+    local features="$1"
+    local rebuild="$2"
+    local pcp_host="${PCP_HOST:-192.168.1.60}"
+    local pcp_user="${PCP_USER:-tc}"
+    local tce_base="/mnt/mmcblk0p2/tce"
+
+    # Build TCZ if missing
+    if [ ! -f "${DIST_DIR}/woodaudio.tcz" ]; then
+        echo "==> Brak woodaudio.tcz, buduję..."
+        ARCH=armv7 do_tcz "$features" "$rebuild"
+    fi
+
+    echo "==> Instalacja woodaudio.tcz na piCorePlayer (${pcp_user}@${pcp_host})..."
+
+    echo "  [1/5] Kopiowanie woodaudio.tcz do ${tce_base}/optional/..."
+    ssh "${pcp_user}@${pcp_host}" "mkdir -p ${tce_base}/optional"
+    scp "${DIST_DIR}/woodaudio.tcz" "${pcp_user}@${pcp_host}:${tce_base}/optional/"
+    scp "${DIST_DIR}/woodaudio.tcz.dep" "${pcp_user}@${pcp_host}:${tce_base}/optional/"
+    scp "${DIST_DIR}/woodaudio.tcz.md5.txt" "${pcp_user}@${pcp_host}:${tce_base}/optional/"
+
+    echo "  [2/5] Rejestracja w onboot.lst..."
+    ssh "${pcp_user}@${pcp_host}" "grep -qxF 'woodaudio.tcz' ${tce_base}/onboot.lst 2>/dev/null || echo 'woodaudio.tcz' >> ${tce_base}/onboot.lst"
+
+    echo "  [3/5] Konfiguracja autostartu (bootlocal.sh)..."
+    ssh "${pcp_user}@${pcp_host}" "TCE_BASE=${tce_base}" sh -s << 'REMOTESCRIPT'
+set -eu
+tce_base="${TCE_BASE:-/mnt/mmcblk0p2/tce}"
+
+mkdir -p /tmp/wa-bootlocal
+if [ -f "${tce_base}/mydata.tgz" ]; then
+    tar xzf "${tce_base}/mydata.tgz" -C /tmp/wa-bootlocal 2>/dev/null || true
+fi
+
+mkdir -p /tmp/wa-bootlocal/opt
+if [ -f /tmp/wa-bootlocal/opt/bootlocal.sh ]; then
+    if grep -q "woodaudio-player" /tmp/wa-bootlocal/opt/bootlocal.sh 2>/dev/null; then
+        sed -i 's|.*woodaudio-player.*|SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini \&|' /tmp/wa-bootlocal/opt/bootlocal.sh
+    else
+        printf '\n# Start woodaudio\nSLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini &\n' >> /tmp/wa-bootlocal/opt/bootlocal.sh
+    fi
+else
+    cat > /tmp/wa-bootlocal/opt/bootlocal.sh << 'BOOTLOCAL'
+#!/bin/sh
+# Start woodaudio
+SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini &
+BOOTLOCAL
+    chmod +x /tmp/wa-bootlocal/opt/bootlocal.sh
+fi
+
+CFG_PATH="home/tc/.config/woodaudio"
+if [ -f /tmp/wa-bootlocal/opt/.filetool.lst ]; then
+    grep -qxF 'opt/bootlocal.sh' /tmp/wa-bootlocal/opt/.filetool.lst 2>/dev/null || echo 'opt/bootlocal.sh' >> /tmp/wa-bootlocal/opt/.filetool.lst
+    grep -qxF "$CFG_PATH" /tmp/wa-bootlocal/opt/.filetool.lst 2>/dev/null || echo "$CFG_PATH" >> /tmp/wa-bootlocal/opt/.filetool.lst
+else
+    printf 'opt/bootlocal.sh\n%s\n' "$CFG_PATH" > /tmp/wa-bootlocal/opt/.filetool.lst
+fi
+
+cd /tmp/wa-bootlocal
+tar czf "${tce_base}/mydata.tgz" .
+cd /
+rm -rf /tmp/wa-bootlocal
+# Also update live bootlocal.sh
+if grep -q "woodaudio-player" /opt/bootlocal.sh 2>/dev/null; then
+    sed -i 's|.*woodaudio-player.*|SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini \&|' /opt/bootlocal.sh
+else
+    printf '\n# Start woodaudio\nSLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini &\n' >> /opt/bootlocal.sh
+fi
+# Upewnij się, że config woodaudio jest w .filetool.lst (live)
+if [ -f /opt/.filetool.lst ]; then
+    grep -qxF "$CFG_PATH" /opt/.filetool.lst 2>/dev/null || echo "$CFG_PATH" >> /opt/.filetool.lst
+fi
+echo "mydata.tgz zaktualizowany"
+REMOTESCRIPT
+
+    echo "  [3b/5] Backup configu do mydata.tgz..."
+    ssh "${pcp_user}@${pcp_host}" "sudo filetool.sh -b" || true
+
+    echo "  [4/5] Instalowanie zależności woodaudio z repozytorium TCZ..."
+    ssh "${pcp_user}@${pcp_host}" "while read dep; do
+      depname=\"\${dep%.tcz}\"
+      marker=\"/usr/local/tce.installed/\$depname\"
+      tcz_file=\"${tce_base}/optional/\$dep\"
+      if [ -f \"\$marker\" ] && [ ! -f \"\$tcz_file\" ]; then
+        sudo rm -f \"\$marker\"
+      fi
+      tce-load -wi \"\$dep\" 2>&1 || true
+    done < ${tce_base}/optional/woodaudio.tcz.dep"
+    echo "  [4b/5] Ładowanie woodaudio.tcz..."
+    ssh "${pcp_user}@${pcp_host}" "tce-load -i woodaudio.tcz 2>&1 || true"
+
+    echo "  [5/6] Naprawa permisji configu..."
+    ssh "${pcp_user}@${pcp_host}" "sudo chmod 666 /home/tc/.config/woodaudio/config.ini 2>/dev/null || true"
+
+    echo "  [6/6] Uruchamianie woodaudio..."
+    ssh "${pcp_user}@${pcp_host}" "nohup env SLINT_KMS_ROTATION=90 woodaudio-player --config /home/tc/.config/woodaudio/config.ini &" || true
+
+    echo "  [7/7] Backup konfiguracji (tokeny) do mydata.tgz..."
+    ssh "${pcp_user}@${pcp_host}" "sleep 5 && sudo filetool.sh -b 2>&1 || true"
+
+    echo ""
+    echo "==> Gotowe!"
+    echo "    woodaudio.tcz zainstalowany na ${pcp_host}"
+    echo "    Konfiguracja: /home/tc/.config/woodaudio/config.ini"
+    echo "    Autostart przy bootowaniu przez /opt/bootlocal.sh"
+    echo "    Uruchomiony teraz: woodaudio-player"
+    echo ""
+    echo "==> WAŻNE: Po pierwszym zalogowaniu przez link Tidal,"
+    echo "    uruchom: ssh tc@${pcp_host} sudo filetool.sh -b"
+    echo "    aby zapisać tokeny w backupie na stałe."
+}
+
 do_clean() {
     echo "==> Czyszczenie target/ i dist/..."
     rm -rf "${SCRIPT_DIR}/target" "${DIST_DIR}"
@@ -637,6 +758,8 @@ case "$SUBCOMMAND" in
     build)        do_build "$FEATURES" "$COPY_DEST" "$REBUILD" ;;
     dist)         do_dist "$FEATURES" "$REBUILD" ;;
     tcz)          do_tcz "$FEATURES" "$REBUILD" ;;
+    pcp-image)    ARCH=armv7 do_tcz "$FEATURES" "$REBUILD" && exec "${SCRIPT_DIR}/build_image.sh" ;;
+    install-pcp)  do_install_pcp "$FEATURES" "$REBUILD" ;;
     deploy-rpios) do_deploy_rpios "$FEATURES" "$REBUILD" ;;
     deploy-picore) do_deploy_picore "$FEATURES" "$REBUILD" ;;
     clean)        do_clean ;;
