@@ -154,12 +154,32 @@ impl CmdEvents {
 
 #[derive(Debug)]
 #[derive(Clone)]
+pub struct Audio {
+    pub device: String,
+}
+
+impl Audio {
+    fn init(conf: &Ini) -> Self {
+        let properties = conf.section(Some("Audio"));
+        Self {
+            device: properties.get_string_with_default("device", "default"),
+        }
+    }
+    fn prepare_to_save(&self, ini: &mut Ini) {
+        ini.with_section(Some("Audio"))
+            .set("device", self.device.clone());
+    }
+}
+
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct Config {
     path: PathBuf,
     pub tidal: Tidal,
     pub gui: Gui,
     pub gpio: Gpio,
     pub cmd_events: CmdEvents,
+    pub audio: Audio,
 }
 
 impl Config {
@@ -177,6 +197,7 @@ impl Config {
             tidal: Tidal::init(&conf),
             gui: Gui::init(&conf),
             gpio: Gpio::init(&conf),
+            audio: Audio::init(&conf),
         };
 
         config.save();
@@ -189,6 +210,7 @@ impl Config {
         self.gui.prepare_to_save(&mut conf);
         self.gpio.prepare_to_save(&mut conf);
         self.cmd_events.prepare_to_save(&mut conf);
+        self.audio.prepare_to_save(&mut conf);
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).unwrap();
         }

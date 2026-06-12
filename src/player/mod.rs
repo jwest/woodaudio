@@ -16,9 +16,9 @@ pub trait Player {
     fn is_paused(&self) -> bool;
 }
 
-fn create_player(_config: &Config) -> Box<dyn Player> {
-    info!("[Player] Using CpalPlayer output");
-    Box::new(cpal_player::CpalPlayer::new())
+fn create_player(config: &Config) -> Box<dyn Player> {
+    info!("[Player] Using CpalPlayer output (device: {})", config.audio.device);
+    Box::new(cpal_player::CpalPlayer::new(config.audio.device.clone()))
 }
 
 pub fn player(config: &Config, playlist: &Playlist, mut player_bus: PlayerBus) {

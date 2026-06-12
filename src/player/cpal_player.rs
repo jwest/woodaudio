@@ -6,7 +6,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use reqwest::blocking::Client;
 use ringbuf::HeapRb;
 
@@ -23,10 +23,11 @@ pub struct CpalPlayer {
     stopped: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
     http_client: Arc<Client>,
+    device_name: String,
 }
 
 impl CpalPlayer {
-    pub fn new() -> Self {
+    pub fn new(device_name: String) -> Self {
         let http_client = Arc::new(
             Client::builder()
                 .timeout(Duration::from_secs(600))
@@ -39,6 +40,7 @@ impl CpalPlayer {
             stopped: Arc::new(AtomicBool::new(false)),
             worker: None,
             http_client,
+            device_name,
         }
     }
 
@@ -48,6 +50,41 @@ impl CpalPlayer {
             let _ = handle.join();
         }
     }
+}
+
+fn find_device_by_name(device_name: &str, host: &cpal::Host) -> Option<cpal::Device> {
+    if device_name == "default" {
+        return host.default_output_device();
+    }
+
+    let query = device_name.to_lowercase();
+    let devices = match host.devices() {
+        Ok(d) => d,
+        Err(e) => {
+            error!("[CpalPlayer] Failed to enumerate devices: {}", e);
+            return host.default_output_device();
+        }
+    };
+
+    let mut candidates: Vec<cpal::Device> = Vec::new();
+    for device in devices {
+        if let Ok(name) = device.name() {
+            if name.to_lowercase().contains(&query) {
+                if device.default_output_config().is_ok() {
+                    return Some(device);
+                }
+                candidates.push(device);
+            }
+        }
+    }
+
+    if !candidates.is_empty() {
+        info!("[CpalPlayer] Device '{}' has no default output config, using first candidate", device_name);
+        return Some(candidates.remove(0));
+    }
+
+    warn!("[CpalPlayer] Device '{}' not found, falling back to default", device_name);
+    host.default_output_device()
 }
 
 fn open_stream(client: &Client, url: &str) -> Result<Box<dyn Read + Send + Sync + 'static>, Box<dyn std::error::Error>> {
@@ -77,6 +114,7 @@ impl Player for CpalPlayer {
         let paused = Arc::clone(&self.paused);
         let stopped = Arc::clone(&self.stopped);
         let http_client = Arc::clone(&self.http_client);
+        let device_name = self.device_name.clone();
 
         let handle = thread::spawn(move || {
             info!("[CpalPlayer] Opening stream: {}", stream_url);
@@ -91,7 +129,7 @@ impl Player for CpalPlayer {
             };
 
             let host = cpal::default_host();
-            let device = match host.default_output_device() {
+            let device = match find_device_by_name(&device_name, &host) {
                 Some(d) => d,
                 None => {
                     error!("[CpalPlayer] No output device");
@@ -109,10 +147,11 @@ impl Player for CpalPlayer {
                 }
             };
 
-            info!("[CpalPlayer] Output: {} {}Hz {}ch",
+            info!("[CpalPlayer] Output: {} {}Hz {}ch (requested: {})",
                 device.name().unwrap_or_default(),
                 supported.sample_rate().0,
-                supported.channels());
+                supported.channels(),
+                device_name);
 
             let ring = HeapRb::<i16>::new(RING_BUFFER_SAMPLES);
             let (mut producer, mut consumer) = ring.split();
