@@ -30,14 +30,32 @@ impl Backend for TidalBackend {
         }
     }
     fn discovery(&self, discovery_fn: impl Fn(Track)) {
+        let mut all_tracks: Vec<Track> = Vec::new();
+
         if self.favorites_enabled {
-            let _ = self.discover_favorities_tracks(&self.session, &discovery_fn);
+            if let Ok(tracks) = self.discover_favorities_tracks(&self.session) {
+                let mut iter = tracks.into_iter();
+                if let Some(first) = iter.next() {
+                    discovery_fn(first);
+                }
+                all_tracks.extend(iter);
+            }
         }
         if self.mixes_enabled {
-            let _ = self.discover_mixes(&self.session, &discovery_fn);
+            if let Ok(tracks) = self.discover_mixes(&self.session) {
+                all_tracks.extend(tracks);
+            }
         }
         if self.latest_from_favorites_enabled {
-            let _ = self.discover_latest_from_favorites(&self.session, &discovery_fn);
+            if let Ok(tracks) = self.discover_latest_from_favorites(&self.session) {
+                all_tracks.extend(tracks);
+            }
+        }
+
+        let mut rng = thread_rng();
+        all_tracks.shuffle(&mut rng);
+        for track in all_tracks {
+            discovery_fn(track);
         }
     }
     fn get_track_url(&mut self, track_id: String) -> Result<String, Box<dyn Error>> {
@@ -89,8 +107,9 @@ impl Backend for TidalBackend {
 }
 
 impl TidalBackend {
-    fn discover_favorities_tracks(&self, session: &Session, discovery_fn: impl Fn(Track)) -> Result<(), Box<dyn Error>> {
+    fn discover_favorities_tracks(&self, session: &Session) -> Result<Vec<Track>, Box<dyn Error>> {
         let v = session.get_favorites()?;
+        let mut tracks = Vec::new();
 
         if let Value::Array(items) = &v["items"] {
             let mut rng = thread_rng();
@@ -99,21 +118,21 @@ impl TidalBackend {
 
             for item in shuffled_items {
                 if item["item"]["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready) {
-                    discovery_fn(Track::build_from_json(item["item"].clone()));
+                    tracks.push(Track::build_from_json(item["item"].clone()));
                 }
             }
         }
 
-        Ok(())
+        Ok(tracks)
     }
 
-    fn discover_mixes(&self, session: &Session, discovery_fn: impl Fn(Track)) -> Result<(), Box<dyn Error>> {
+    fn discover_mixes(&self, session: &Session) -> Result<Vec<Track>, Box<dyn Error>> {
         let v = session.get_page_for_you()?;
         let mut mixes = parse_modules(v)?;
         let mut rng = thread_rng();
         mixes.shuffle(&mut rng);
 
-        let mut all_tracks: Vec<Value> = mixes.into_iter()
+        let all_tracks: Vec<Track> = mixes.into_iter()
             .filter(|mix| mix["mixType"].is_string())
             .filter_map(|mix| session.get_mix(mix["id"].as_str().unwrap()).ok())
             .filter_map(|mix| parse_modules(mix).ok())
@@ -122,15 +141,10 @@ impl TidalBackend {
                 mix_tracks
             })
             .filter(|t| t["adSupportedStreamReady"].as_bool().is_some_and(|ready| ready))
+            .map(Track::build_from_json)
             .collect();
 
-        all_tracks.shuffle(&mut rng);
-
-        for track in all_tracks {
-            discovery_fn(Track::build_from_json(track));
-        }
-
-        Ok(())
+        Ok(all_tracks)
     }
 
     fn parse_tracks(items: &Value) -> Vec<Track> {
@@ -147,7 +161,7 @@ impl TidalBackend {
         tracks
     }
 
-    fn discover_latest_from_favorites(&self, session: &Session, discovery_fn: impl Fn(Track)) -> Result<(), Box<dyn Error>> {
+    fn discover_latest_from_favorites(&self, session: &Session) -> Result<Vec<Track>, Box<dyn Error>> {
         let favorites = session.get_favorites()?;
 
         let mut artist_ids: Vec<String> = Vec::new();
@@ -209,11 +223,7 @@ impl TidalBackend {
         all_tracks.shuffle(&mut rng);
         all_tracks.truncate(25);
 
-        for track in all_tracks {
-            discovery_fn(track);
-        }
-
-        Ok(())
+        Ok(all_tracks)
     }
 
     fn sleep_for_health() {
