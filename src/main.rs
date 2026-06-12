@@ -41,7 +41,10 @@ fn downloader_module(playlist: Playlist, backend_init: BackendInitialization) {
             thread::sleep(Duration::from_millis(10));
         }
 
-        backend.discover();
+        let discover_backend = backend.clone();
+        thread::spawn(move || {
+            discover_backend.discover();
+        });
 
         playlist.buffer_worker(|track| {
             let mut backend = backend_init.get_initialized();

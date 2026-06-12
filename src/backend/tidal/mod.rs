@@ -30,11 +30,11 @@ impl Backend for TidalBackend {
         }
     }
     fn discovery(&self, discovery_fn: impl Fn(Track)) {
-        if self.mixes_enabled {
-            let _ = self.discover_mixes(&self.session, &discovery_fn);
-        }
         if self.favorites_enabled {
             let _ = self.discover_favorities_tracks(&self.session, &discovery_fn);
+        }
+        if self.mixes_enabled {
+            let _ = self.discover_mixes(&self.session, &discovery_fn);
         }
         if self.latest_from_favorites_enabled {
             let _ = self.discover_latest_from_favorites(&self.session, &discovery_fn);
