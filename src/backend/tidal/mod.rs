@@ -14,6 +14,9 @@ mod session;
 #[derive(Clone)]
 pub struct TidalBackend {
     session: Session,
+    mixes_enabled: bool,
+    favorites_enabled: bool,
+    latest_from_favorites_enabled: bool,
 }
 
 impl Backend for TidalBackend {
@@ -21,11 +24,21 @@ impl Backend for TidalBackend {
         let session = Session::setup(config, player_bus.clone());
         Self {
             session: session.clone(),
+            mixes_enabled: config.discovery.mixes_enabled,
+            favorites_enabled: config.discovery.favorites_enabled,
+            latest_from_favorites_enabled: config.discovery.latest_from_favorites_enabled,
         }
     }
     fn discovery(&self, discovery_fn: impl Fn(Track)) {
-        let _ = self.discover_mixes(&self.session, &discovery_fn);
-        let _ = self.discover_favorities_tracks(&self.session, &discovery_fn);
+        if self.mixes_enabled {
+            let _ = self.discover_mixes(&self.session, &discovery_fn);
+        }
+        if self.favorites_enabled {
+            let _ = self.discover_favorities_tracks(&self.session, &discovery_fn);
+        }
+        if self.latest_from_favorites_enabled {
+            let _ = self.discover_latest_from_favorites(&self.session, &discovery_fn);
+        }
     }
     fn get_track_url(&mut self, track_id: String) -> Result<String, Box<dyn Error>> {
         for _ in 1..5 {
@@ -132,6 +145,75 @@ impl TidalBackend {
         }
 
         tracks
+    }
+
+    fn discover_latest_from_favorites(&self, session: &Session, discovery_fn: impl Fn(Track)) -> Result<(), Box<dyn Error>> {
+        let favorites = session.get_favorites()?;
+
+        let mut artist_ids: Vec<String> = Vec::new();
+        if let Value::Array(items) = &favorites["items"] {
+            for item in items {
+                if let Some(artists) = item["item"]["artists"].as_array() {
+                    for artist in artists {
+                        if let Some(id) = artist["id"].as_i64() {
+                            let id_str = id.to_string();
+                            if !artist_ids.contains(&id_str) {
+                                artist_ids.push(id_str);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut rng = thread_rng();
+        artist_ids.shuffle(&mut rng);
+        artist_ids.truncate(10);
+
+        let mut all_tracks: Vec<Track> = Vec::new();
+
+        for artist_id in &artist_ids {
+            Self::sleep_for_health();
+
+            if let Ok(albums) = session.get_artist_albums(artist_id) {
+                let mut album_ids: Vec<String> = Vec::new();
+
+                if let Value::Array(items) = &albums["items"] {
+                    for album in items {
+                        if let Some(id) = album["id"].as_i64() {
+                            if album_ids.len() < 3 {
+                                album_ids.push(id.to_string());
+                            }
+                        }
+                    }
+                }
+
+                for album_id in &album_ids {
+                    Self::sleep_for_health();
+
+                    if let Ok(album_tracks) = session.get_album(album_id) {
+                        let mut tracks = Self::parse_tracks(&album_tracks["items"]);
+                        tracks.shuffle(&mut rng);
+                        tracks.truncate(3);
+
+                        for track in tracks {
+                            if !all_tracks.iter().any(|t| t.id == track.id) {
+                                all_tracks.push(track);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        all_tracks.shuffle(&mut rng);
+        all_tracks.truncate(25);
+
+        for track in all_tracks {
+            discovery_fn(track);
+        }
+
+        Ok(())
     }
 
     fn sleep_for_health() {

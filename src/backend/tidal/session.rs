@@ -290,6 +290,12 @@ impl Session {
         let result: Value = serde_json::from_str(&body)?;
         Ok(result)
     }
+    pub(super) fn get_artist_albums(&self, artist_id: &str) -> Result<Value, Box<dyn Error>> {
+        let response = self.request(format!("{}/artists/{}/albums?countryCode={}&deviceType=BROWSER&limit=10&offset=0", self.api_path, artist_id, self.country_code))?;
+        let body = response.text()?;
+        let result: Value = serde_json::from_str(&body)?;
+        Ok(result)
+    }
     pub(super) fn add_track_to_favorites(&self, track_id: &str) -> Result<(), Box<dyn Error>> {
         self.client.post(format!("{}/users/{}/favorites/tracks?countryCode={}&deviceType=BROWSER", self.api_path, self.user_id, self.country_code))
             .form(&[("trackId", track_id)])

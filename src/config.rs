@@ -158,6 +158,31 @@ pub struct Audio {
     pub device: String,
 }
 
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct Discovery {
+    pub mixes_enabled: bool,
+    pub favorites_enabled: bool,
+    pub latest_from_favorites_enabled: bool,
+}
+
+impl Discovery {
+    fn init(conf: &Ini) -> Self {
+        let properties = conf.section(Some("Discovery"));
+        Self {
+            mixes_enabled: properties.get_bool_with_default("mixes_enabled", true),
+            favorites_enabled: properties.get_bool_with_default("favorites_enabled", true),
+            latest_from_favorites_enabled: properties.get_bool_with_default("latest_from_favorites_enabled", true),
+        }
+    }
+    fn prepare_to_save(&self, ini: &mut Ini) {
+        ini.with_section(Some("Discovery"))
+            .set("mixes_enabled", bool_to_string(self.mixes_enabled))
+            .set("favorites_enabled", bool_to_string(self.favorites_enabled))
+            .set("latest_from_favorites_enabled", bool_to_string(self.latest_from_favorites_enabled));
+    }
+}
+
 impl Audio {
     fn init(conf: &Ini) -> Self {
         let properties = conf.section(Some("Audio"));
@@ -180,6 +205,7 @@ pub struct Config {
     pub gpio: Gpio,
     pub cmd_events: CmdEvents,
     pub audio: Audio,
+    pub discovery: Discovery,
 }
 
 impl Config {
@@ -198,6 +224,7 @@ impl Config {
             gui: Gui::init(&conf),
             gpio: Gpio::init(&conf),
             audio: Audio::init(&conf),
+            discovery: Discovery::init(&conf),
         };
 
         config.save();
@@ -211,6 +238,7 @@ impl Config {
         self.gpio.prepare_to_save(&mut conf);
         self.cmd_events.prepare_to_save(&mut conf);
         self.audio.prepare_to_save(&mut conf);
+        self.discovery.prepare_to_save(&mut conf);
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).unwrap();
         }
