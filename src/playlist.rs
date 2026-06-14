@@ -129,10 +129,15 @@ impl Playlist {
         }
     }
 
+    pub fn clear(&self) {
+        while self.buffered_receiver.try_recv().is_ok() {}
+        while self.receiver.try_recv().is_ok() {}
+    }
+
     pub fn push(&self, tracks: Vec<Track>) {
         debug!("[Playlist] Push tracks: {:?}", tracks);
         let _ = self.sender.lock().map(|sender| {
-            for t in &tracks { let _ = sender.send(t.clone()); }
+            for t in &tracks { let _ = sender.try_send(t.clone()); }
         });
     }
     

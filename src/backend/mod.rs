@@ -1,4 +1,4 @@
-use std::{error::Error, sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex}, time::Duration};
+use std::{error::Error, sync::{atomic::{AtomicBool, AtomicU64, Ordering}, Arc, Mutex}, time::Duration};
 
 use bytes::Bytes;
 
@@ -7,6 +7,7 @@ use crate::backend::cover::CoverProcessor;
 use crate::playlist::BufferedCover;
 
 use self::{downloader::Downloader, tidal::TidalBackend};
+use log::info;
 
 mod tidal;
 mod downloader;
@@ -65,6 +66,7 @@ pub struct BackendService {
     downloader: Downloader,
     playerbus: Arc<Mutex<PlayerBus>>,
     listener_ready: Arc<AtomicBool>,
+    discovery_generation: Arc<AtomicU64>,
 }
 
 impl BackendService {
@@ -75,12 +77,24 @@ impl BackendService {
             playerbus: Arc::new(Mutex::new(playerbus)),
             downloader: Downloader::init(config, tidal),
             listener_ready: Arc::new(AtomicBool::new(false)),
+            discovery_generation: Arc::new(AtomicU64::new(0)),
         }
     }
     pub fn discover(&self) {
+        let gen = self.discovery_generation.load(Ordering::SeqCst);
+        info!("[Backend] discover() started, gen={}", gen);
+        let count = std::sync::atomic::AtomicU64::new(0);
+        let count_ref = &count;
         self.tidal.discovery(move |track| {
+            let current = self.discovery_generation.load(Ordering::SeqCst);
+            if current != gen {
+                info!("[Backend] discover callback dropped: callback gen={}, current gen={}", gen, current);
+                return;
+            }
+            count_ref.fetch_add(1, Ordering::SeqCst);
             self.playerbus.lock().unwrap().publish_message(state::Message::TrackDiscovered(track));
         });
+        info!("[Backend] discover() finished, gen={}, published {} tracks", gen, count.load(Ordering::SeqCst));
     }
     pub fn is_listener_ready(&self) -> bool {
         self.listener_ready.load(Ordering::SeqCst)
@@ -102,6 +116,8 @@ impl BackendService {
                 "Like".to_string(),
                 "LoadLikedAlbum".to_string(),
                 "LoadCover".to_string(),
+                "Suspend".to_string(),
+                "Resume".to_string(),
             ]
         );
 
@@ -151,6 +167,38 @@ impl BackendService {
                 Some(state::Command::LoadCover(cover_url)) => {
                     let cover_path = CoverProcessor::new(self.tidal.get_cover(cover_url.clone()).unwrap()).generate_foreground().unwrap();
                     self.playerbus.lock().unwrap().publish_message(state::Message::CoverLoaded(BufferedCover { url: cover_url.clone(), path: cover_path.to_str().unwrap().to_string() }))
+                },
+                Some(state::Command::Suspend) => {
+                    let new_gen = self.discovery_generation.fetch_add(1, Ordering::SeqCst) + 1;
+                    info!("[Backend] Suspend: gen incremented to {}, clearing playlist", new_gen);
+                    playlist.clear();
+                    if !self.config.cmd_events.on_suspend.is_empty() {
+                        match std::process::Command::new("sh").arg("-c").arg(&self.config.cmd_events.on_suspend).spawn() {
+                            Ok(_) => {},
+                            Err(e) => log::error!("[Backend] Failed to execute on-suspend command '{}': {}", self.config.cmd_events.on_suspend, e),
+                        }
+                    }
+                    self.playerbus.lock().unwrap().publish_message(state::Message::Suspending);
+                    info!("[Backend] Suspend: Suspending message published");
+                },
+                Some(state::Command::Resume) => {
+                    let new_gen = self.discovery_generation.fetch_add(1, Ordering::SeqCst) + 1;
+                    info!("[Backend] Resume: gen incremented to {}", new_gen);
+                    if !self.config.cmd_events.on_resume.is_empty() {
+                        match std::process::Command::new("sh").arg("-c").arg(&self.config.cmd_events.on_resume).spawn() {
+                            Ok(_) => {},
+                            Err(e) => log::error!("[Backend] Failed to execute on-resume command '{}': {}", self.config.cmd_events.on_resume, e),
+                        }
+                    }
+                    let backend = self.clone();
+                    info!("[Backend] Resume: spawning discover thread...");
+                    std::thread::spawn(move || {
+                        info!("[Backend] Resume: discover thread started");
+                        backend.discover();
+                        info!("[Backend] Resume: discover thread finished");
+                    });
+                    self.playerbus.lock().unwrap().publish_message(state::Message::Resuming);
+                    info!("[Backend] Resume: Resuming message published");
                 },
                 _ => {
                     std::thread::sleep(Duration::from_millis(500));

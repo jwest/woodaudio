@@ -6,6 +6,7 @@ import "./static/NotoSans_Condensed-SemiBold.ttf";
 export global Data {
     in property <bool> is_session_exist;
     in property <bool> is_loading;
+    in property <bool> is_suspended;
     in property <image> session_qrcode;
     in property <string> session_code;
 
@@ -172,35 +173,39 @@ component Loading {
 export component AppWindow inherits Window {
     background: black;
 
-    Image {
-        width: 1024px * Data.window_x_ratio;
-        height: 1024px * Data.window_x_ratio;
-        x: 0;
-        y: -212px * Data.window_y_ratio;
-        horizontal-alignment: center;
-        source: Data.current_cover_background;
-    }
+    Rectangle {
+        visible: !Data.is_suspended;
 
-    Player {
-        visible: !Data.is_loading && Data.is_session_exist;
-        x: 0;
-        y: 0;
-    }
-    SwipeGestureHandler {
-        handle-swipe-left: true;
-        swiped => {
-            Data.request_next_track();
+        Image {
+            width: 1024px * Data.window_x_ratio;
+            height: 1024px * Data.window_x_ratio;
+            x: 0;
+            y: -212px * Data.window_y_ratio;
+            horizontal-alignment: center;
+            source: Data.current_cover_background;
         }
-    }
 
-    Loading {
-        visible: Data.is_session_exist && Data.is_loading;
-        x: 0;
-        y: 0;
-    }
+        Player {
+            visible: !Data.is_loading && Data.is_session_exist;
+            x: 0;
+            y: 0;
+        }
+        SwipeGestureHandler {
+            handle-swipe-left: true;
+            swiped => {
+                Data.request_next_track();
+            }
+        }
 
-    Session {
-        visible: !Data.is_session_exist;
+        Loading {
+            visible: Data.is_session_exist && Data.is_loading;
+            x: 0;
+            y: 0;
+        }
+
+        Session {
+            visible: !Data.is_session_exist;
+        }
     }
 
     Timer {

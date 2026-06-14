@@ -644,15 +644,15 @@ fi
 mkdir -p /tmp/wa-bootlocal/opt
 if [ -f /tmp/wa-bootlocal/opt/bootlocal.sh ]; then
     if grep -q "woodaudio-player" /tmp/wa-bootlocal/opt/bootlocal.sh 2>/dev/null; then
-        sed -i 's|.*woodaudio-player.*|SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini \&|' /tmp/wa-bootlocal/opt/bootlocal.sh
+        sed -i 's|.*woodaudio-player.*|SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini >> /tmp/woodaudio.log 2>\&1 \&|' /tmp/wa-bootlocal/opt/bootlocal.sh
     else
-        printf '\n# Start woodaudio\nSLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini &\n' >> /tmp/wa-bootlocal/opt/bootlocal.sh
+        printf '\n# Start woodaudio\nSLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini >> /tmp/woodaudio.log 2>&1 &\n' >> /tmp/wa-bootlocal/opt/bootlocal.sh
     fi
 else
     cat > /tmp/wa-bootlocal/opt/bootlocal.sh << 'BOOTLOCAL'
 #!/bin/sh
 # Start woodaudio
-SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini &
+SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini >> /tmp/woodaudio.log 2>&1 &
 BOOTLOCAL
     chmod +x /tmp/wa-bootlocal/opt/bootlocal.sh
 fi
@@ -671,9 +671,9 @@ cd /
 rm -rf /tmp/wa-bootlocal
 # Also update live bootlocal.sh
 if grep -q "woodaudio-player" /opt/bootlocal.sh 2>/dev/null; then
-    sed -i 's|.*woodaudio-player.*|SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini \&|' /opt/bootlocal.sh
+    sed -i 's|.*woodaudio-player.*|SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini >> /tmp/woodaudio.log 2>\&1 \&|' /opt/bootlocal.sh
 else
-    printf '\n# Start woodaudio\nSLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini &\n' >> /opt/bootlocal.sh
+    printf '\n# Start woodaudio\nSLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini >> /tmp/woodaudio.log 2>&1 &\n' >> /opt/bootlocal.sh
 fi
 # Upewnij się, że config woodaudio jest w .filetool.lst (live)
 if [ -f /opt/.filetool.lst ]; then
@@ -702,7 +702,7 @@ REMOTESCRIPT
     ssh "${pcp_user}@${pcp_host}" "sudo chmod 666 /home/tc/.config/woodaudio/config.ini 2>/dev/null || true"
 
     echo "  [6/6] Uruchamianie woodaudio..."
-    ssh "${pcp_user}@${pcp_host}" "nohup env SLINT_KMS_ROTATION=90 woodaudio-player --config /home/tc/.config/woodaudio/config.ini &" || true
+    ssh "${pcp_user}@${pcp_host}" "sudo sh -c 'SLINT_KMS_ROTATION=90 nohup /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini >> /tmp/woodaudio.log 2>&1 &'" || true
 
     echo "  [7/7] Backup konfiguracji (tokeny) do mydata.tgz..."
     ssh "${pcp_user}@${pcp_host}" "sleep 5 && sudo filetool.sh -b 2>&1 || true"

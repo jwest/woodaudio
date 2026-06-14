@@ -166,18 +166,19 @@ fi
 mkdir -p /tmp/mydata_staging/opt
 if [ -f /tmp/mydata_staging/opt/bootlocal.sh ]; then
     if grep -q "woodaudio-player" /tmp/mydata_staging/opt/bootlocal.sh 2>/dev/null; then
-        sed -i 's|.*woodaudio-player.*|SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini \&|' /tmp/mydata_staging/opt/bootlocal.sh
+            sed -i 's|.*woodaudio-player.*|SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini >> /tmp/woodaudio.log 2>\&1 \&|' /tmp/mydata_staging/opt/bootlocal.sh
     else
-        printf "\n# Start woodaudio\nSLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini &\n" >> /tmp/mydata_staging/opt/bootlocal.sh
+        printf "\n# Start woodaudio\nSLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini >> /tmp/woodaudio.log 2>&1 &\n" >> /tmp/mydata_staging/opt/bootlocal.sh
     fi
 else
     cat > /tmp/mydata_staging/opt/bootlocal.sh << "EOF"
 #!/bin/sh
 # Start woodaudio
-SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini &
+SLINT_KMS_ROTATION=90 /usr/local/bin/woodaudio-player --config /home/tc/.config/woodaudio/config.ini >> /tmp/woodaudio.log 2>&1 &
 EOF
     chmod +x /tmp/mydata_staging/opt/bootlocal.sh
 fi
+
 echo "bootlocal.sh:"
 cat /tmp/mydata_staging/opt/bootlocal.sh
 

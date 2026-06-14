@@ -99,6 +99,7 @@ impl Gui {
                 handle.global::<Data>().set_window_x(gui_config.window_x as i32);
                 handle.global::<Data>().set_window_y(gui_config.window_y as i32);
                 handle.global::<Data>().set_is_loading(is_loading);
+                handle.global::<Data>().set_is_suspended(current_state.suspended);
 
                 handle.global::<Data>().set_current_track_name(current_track_name.into());
                 handle.global::<Data>().set_current_artist_name(current_artist_name.into());

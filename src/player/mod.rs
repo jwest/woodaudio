@@ -22,14 +22,52 @@ fn create_player(config: &Config) -> Box<dyn Player> {
 }
 
 pub fn player(config: &Config, playlist: &Playlist, mut player_bus: PlayerBus) {
-    let command_channel = player_bus.register_command_channel(vec![Command::Play.as_string(), Command::Pause.as_string(), Command::Next.as_string()]);
+    let command_channel = player_bus.register_command_channel(vec![
+        Command::Play.as_string(),
+        Command::Pause.as_string(),
+        Command::Next.as_string(),
+        Command::Suspend.as_string(),
+        Command::Resume.as_string(),
+    ]);
 
     let mut backend = create_player(config);
 
     let mut playing_time: Option<Duration> = None;
     let mut last_iteration_datetime = Instant::now();
+    let mut suspended = false;
 
     loop {
+        match command_channel.read_command() {
+            Some(Command::Play) => {
+                backend.resume();
+                player_bus.publish_message(Message::PlayerPlaying);
+            },
+            Some(Command::Pause) => {
+                backend.pause();
+                player_bus.publish_message(Message::PlayerToPause);
+            },
+            Some(Command::Next) => {
+                backend.stop();
+            },
+            Some(Command::Suspend) => {
+                info!("[Player] Suspend: stopping backend, setting suspended flag");
+                backend.stop();
+                suspended = true;
+                playing_time = None;
+                player_bus.publish_message(Message::PlayerQueueIsEmpty);
+            },
+            Some(Command::Resume) => {
+                info!("[Player] Resume: clearing suspended flag, resuming playback loop");
+                suspended = false;
+            },
+            _ => {},
+        };
+
+        if suspended {
+            thread::sleep(Duration::from_millis(200));
+            continue;
+        }
+
         if backend.is_empty() {
             if let Some(track) = playlist.pop() {
                 if backend.play_track(track.clone()) {
@@ -49,21 +87,6 @@ pub fn player(config: &Config, playlist: &Playlist, mut player_bus: PlayerBus) {
                 thread::sleep(Duration::from_millis(200));
             }
         } else {
-            match command_channel.read_command() {
-                Some(Command::Play) => {
-                    backend.resume();
-                    player_bus.publish_message(Message::PlayerPlaying);
-                },
-                Some(Command::Pause) => {
-                    backend.pause();
-                    player_bus.publish_message(Message::PlayerToPause);
-                },
-                Some(Command::Next) => {
-                    backend.stop();
-                },
-                _ => {},
-            };
-
             thread::sleep(Duration::from_millis(50));
 
             if !backend.is_paused() {

@@ -108,6 +108,7 @@ pub struct Gpio {
     pub enabled: bool,
     pub next_song_pin: u16,
     pub like_song_pin: u16,
+    pub suspend_pin: u16,
 }
 
 impl Gpio {
@@ -117,13 +118,15 @@ impl Gpio {
             enabled: properties.get_bool_with_default("enabled", true),
             next_song_pin: properties.get_u16_with_default("next_song_pin", 12),
             like_song_pin: properties.get_u16_with_default("like_song_pin", 16),
+            suspend_pin: properties.get_u16_with_default("suspend_pin", 23),
         }
     }
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("GPIO"))
             .set("enabled", bool_to_string(self.enabled))
             .set("next_song_pin", self.next_song_pin.to_string())
-            .set("like_song_pin", self.like_song_pin.to_string());
+            .set("like_song_pin", self.like_song_pin.to_string())
+            .set("suspend_pin", self.suspend_pin.to_string());
     }
 }
 
@@ -133,6 +136,8 @@ pub struct CmdEvents {
     pub on_save: String,
     pub on_track_change: String,
     pub on_like: String,
+    pub on_suspend: String,
+    pub on_resume: String,
 }
 
 impl CmdEvents {
@@ -142,13 +147,17 @@ impl CmdEvents {
             on_save: properties.get_string_with_default("on_save", "filetool.sh -b"),
             on_track_change: properties.get_string("on_track_change"),
             on_like: properties.get_string("on_like"),
+            on_suspend: properties.get_string_with_default("on_suspend", "sudo ash -c \"echo \"1\" > /sys/class/backlight/10-0045/bl_power\""),
+            on_resume: properties.get_string_with_default("on_resume", "sudo ash -c \"echo \"0\" > /sys/class/backlight/10-0045/bl_power\""),
         }
     }
     fn prepare_to_save(&self, ini: &mut Ini) {
         ini.with_section(Some("CMD_EVENTS"))
             .set("on_save", self.on_save.clone())
             .set("on_track_change", self.on_track_change.clone())
-            .set("on_like", self.on_like.clone());
+            .set("on_like", self.on_like.clone())
+            .set("on_suspend", self.on_suspend.clone())
+            .set("on_resume", self.on_resume.clone());
     }
 }
 

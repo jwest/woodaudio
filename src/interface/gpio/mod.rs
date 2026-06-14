@@ -1,9 +1,9 @@
 use std::{thread, time::Duration};
 use std::error::Error;
 use log::info;
-use rppal::gpio::Trigger;
-use crate::{config::{self, Config}, state::PlayerBus};
-use crate::state::Message;
+use rppal::gpio::Level;
+use crate::Config;
+use crate::state::{PlayerBus, Message};
 
 pub struct Gpio {
     config: Config,
@@ -17,32 +17,50 @@ impl Gpio {
 
     pub fn wait(&self) -> Result<(), Box<dyn Error>> {
         let gpio = rppal::gpio::Gpio::new()?;
-        let mut next_song_pin = gpio.get(self.config.gpio.next_song_pin.try_into()?)?.into_input_pullup();
-        let mut like_song_pin = gpio.get(self.config.gpio.like_song_pin.try_into()?)?.into_input_pullup();
 
-        let player_bus_next_song = self.player_bus.clone();
-        let player_bus_like_song = self.player_bus.clone();
+        let next_song_pin = gpio.get(self.config.gpio.next_song_pin.try_into()?)?.into_input_pullup();
+        let like_song_pin = gpio.get(self.config.gpio.like_song_pin.try_into()?)?.into_input_pullup();
+        let suspend_pin = gpio.get(self.config.gpio.suspend_pin.try_into()?)?.into_input_pullup();
 
-        next_song_pin.set_async_interrupt(
-            Trigger::FallingEdge,
-            Some(Duration::from_millis(50)),
-            move |event| {
-                info!("Next song button pressed, event = {:?}", event);
-                player_bus_next_song.publish_message(Message::UserPlayNext);
-            },
-        )?;
-
-        like_song_pin.set_async_interrupt(
-            Trigger::FallingEdge,
-            Some(Duration::from_millis(50)),
-            move |event| {
-                info!("Like song button pressed, event = {:?}", event);
-                player_bus_like_song.publish_message(Message::UserLike);
-            },
-        )?;
+        let bus_next = self.player_bus.clone();
+        let bus_like = self.player_bus.clone();
+        let bus_suspend = self.player_bus.clone();
 
         loop {
-            thread::sleep(Duration::from_secs(1));
+            if next_song_pin.read() == Level::Low {
+                thread::sleep(Duration::from_millis(50));
+                if next_song_pin.read() == Level::Low {
+                    info!("Next song button pressed");
+                    bus_next.publish_message(Message::UserPlayNext);
+                    while next_song_pin.read() == Level::Low {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                }
+            }
+
+            if like_song_pin.read() == Level::Low {
+                thread::sleep(Duration::from_millis(50));
+                if like_song_pin.read() == Level::Low {
+                    info!("Like song button pressed");
+                    bus_like.publish_message(Message::UserLike);
+                    while like_song_pin.read() == Level::Low {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                }
+            }
+
+            if suspend_pin.read() == Level::Low {
+                thread::sleep(Duration::from_millis(50));
+                if suspend_pin.read() == Level::Low {
+                    info!("Suspend button pressed");
+                    bus_suspend.publish_message(Message::UserSuspendToggle);
+                    while suspend_pin.read() == Level::Low {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                }
+            }
+
+            thread::sleep(Duration::from_millis(10));
         }
     }
 }

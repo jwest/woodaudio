@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::{Arc, Mutex}, time::Duration};
+use std::{collections::VecDeque, sync::{Arc, Mutex}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
@@ -20,7 +20,9 @@ pub enum Command {
     ShowScreen(String),
     AddTracksToPlaylist(Vec<Track>),
     AddTracksToPlaylistForce(Vec<Track>),
-    LoadCover(String)
+    LoadCover(String),
+    Suspend,
+    Resume,
 }
 
 impl Command {
@@ -38,6 +40,8 @@ impl Command {
             Command::AddTracksToPlaylist(_) => "AddTracksToPlaylist".to_owned(),
             Command::AddTracksToPlaylistForce(_) => "AddTracksToPlaylistForce".to_owned(),
             Command::LoadCover(_) => "LoadCover".to_owned(),
+            Command::Suspend => "Suspend".to_owned(),
+            Command::Resume => "Resume".to_owned(),
         }
     }
 }
@@ -61,12 +65,16 @@ pub enum Message {
 
     UserLike,
     UserPlayNext,
+    UserSuspendToggle,
 
     RadioTracksLoaded,
     TrackLoaded,
     AlbumTracksLoaded,
     ArtistTracksLoaded,
     CoverLoaded(BufferedCover),
+
+    Suspending,
+    Resuming,
 }
 
 #[derive(Debug)]
@@ -76,6 +84,7 @@ pub struct State {
     pub track: Option<TrackState>,
     pub backends: BackendsState,
     pub covers: Covers,
+    pub suspended: bool,
 }
 
 #[derive(Debug)]
@@ -262,6 +271,7 @@ impl State {
                 tidal: BackendState::Off
             },
             covers: Covers::init(),
+            suspended: false,
         }
     }
 }
@@ -297,6 +307,24 @@ impl PlayerBus {
             Message::CoverLoaded(cover) => State { covers: prev_state.covers.add_and_build(cover), ..prev_state },
             Message::UserPlayNext => { self.publish_command(Command::Next); prev_state },
             Message::UserLike => { self.publish_command(Command::Like(prev_state.track.clone().unwrap().id)); prev_state },
+            Message::UserSuspendToggle => {
+                if prev_state.suspended {
+                    info!("[State] UserSuspendToggle: suspended=true → publishing Resume, ts={}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs());
+                    self.publish_command(Command::Resume);
+                } else {
+                    info!("[State] UserSuspendToggle: suspended=false → publishing Suspend, ts={}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs());
+                    self.publish_command(Command::Suspend);
+                }
+                prev_state
+            },
+            Message::Suspending => {
+                info!("[State] Suspending: setting suspended=true");
+                State { suspended: true, ..prev_state }
+            },
+            Message::Resuming => {
+                info!("[State] Resuming: setting suspended=false");
+                State { suspended: false, ..prev_state }
+            },
         };
 
         *state = next_state;
