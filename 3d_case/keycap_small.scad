@@ -63,7 +63,7 @@ keys_mount_weight = 5.5 + 1.5; // 5.5 is min value
 front_panel_width = display_width + display_border + keys_width + 2 * keys_space;
 front_panel_height = display_height;
 
-pi_plate_margin_bottom = 18;
+pi_plate_margin_bottom = 10;
 pi_plate_margin_left = display_pin_margin_right + 0.4;
 pi_plate_margin_front = 19.25+6;
 pi_plate_weight = 3;
@@ -653,12 +653,12 @@ module pi_plate() {
 
 difference() {
     union() {
-        //case();
+        case();
         case_top();
         //buttons();
-        //buttons_mount();
-        //display_plate();
-        //pi_plate();
+        buttons_mount();
+        display_plate();
+        pi_plate();
         //pi_mount();
 
         //simulate_display();

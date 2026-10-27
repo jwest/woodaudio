@@ -134,7 +134,7 @@ impl TidalBackend {
 
         let all_tracks: Vec<Track> = mixes.into_iter()
             .filter(|mix| mix["mixType"].is_string())
-            .filter_map(|mix| session.get_mix(mix["id"].as_str().unwrap()).ok())
+            .filter_map(|mix| mix["id"].as_str().and_then(|id| session.get_mix(id).ok()))
             .filter_map(|mix| parse_modules(mix).ok())
             .flat_map(|mut mix_tracks| {
                 mix_tracks.shuffle(&mut thread_rng());
@@ -243,7 +243,7 @@ impl Track {
         let artist_name = item["artists"].as_array()
             .unwrap_or(&Vec::new())
             .iter()
-            .map(|item| item["name"].as_str().unwrap())
+            .map(|item| item["name"].as_str().unwrap_or_default())
             .collect::<Vec<&str>>()
             .join(", ");
 
@@ -259,10 +259,22 @@ impl Track {
 }
 
 fn parse_modules(value: Value) -> Result<Vec<Value>, Box<dyn Error>> {
-    let modules = value["rows"].as_array().unwrap().iter()
-        .flat_map(|row| row.as_object().unwrap()["modules"].as_array().unwrap())
+    let rows = value["rows"].as_array()
+        .ok_or_else(|| "parse_modules: missing or invalid 'rows' field".to_string())?;
+    let modules = rows.iter()
+        .flat_map(|row| {
+            row.as_object()
+                .and_then(|obj| obj["modules"].as_array())
+                .unwrap_or(&vec![])
+                .clone()
+        })
         .filter(|module| module["pagedList"]["items"].is_array())
-        .flat_map(|module| module.as_object().unwrap()["pagedList"]["items"].as_array().unwrap().clone())
+        .flat_map(|module| {
+            module.as_object()
+                .and_then(|obj| obj["pagedList"]["items"].as_array())
+                .unwrap_or(&vec![])
+                .clone()
+        })
         .collect::<Vec<Value>>();
 
     Ok(modules)
